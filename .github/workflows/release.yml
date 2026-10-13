@@ -80,12 +80,12 @@ jobs:
           git diff --cached --quiet || git commit -m "chore(release): ${{ needs.plan.outputs.version }} from Stash ${{ needs.plan.outputs.stash }}"
           git push origin HEAD:main
 
+      # Trusted publishing: npm trusts this workflow through GitHub's short-lived identity token,
+      # so no npm token is stored. It needs npm 11.5.1 or newer, which the runner image may lack.
       - name: Publish to npm
         run: |
-          [ -z "$NPM_TOKEN" ] || echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
+          npm install --global npm@latest
           npm publish --provenance
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Tag and create the GitHub release
         run: gh release create "v$VERSION" --target "$(git rev-parse HEAD)" --title "$VERSION" --notes "$NOTES"
