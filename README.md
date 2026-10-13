@@ -162,6 +162,15 @@ const totals = await stash.batch({
 totals.scenes.count; // number
 ```
 
+`batch` sends one HTTP request and one GraphQL document with all fields, so Stash answers once. It works for several queries or for several mutations. As the GraphQL spec requires, the fields of a mutation run one after another in the order you wrote them.
+
+Two limits:
+
+- A query and a mutation can't share a request in GraphQL. Await them separately.
+- Sending an array of separate operations in one HTTP request (batched HTTP) isn't part of the GraphQL spec, and Stash rejects it. Use `Promise.all` to run requests concurrently.
+
+If one field of a batch fails, the request throws a `StashError`; the fields that did succeed are on `error.data`.
+
 ## Mutations and file uploads
 
 Mutations work like queries. Mutations that return a scalar take no selection:

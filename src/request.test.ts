@@ -159,3 +159,18 @@ test("an alias must select exactly one field", () => {
   const call = operation("findGroups", undefined, { groups: { $as: { x: {} } } });
   expect(() => buildRequest([[undefined, call]])).toThrow("must select exactly one field");
 });
+
+test("batches mutations into one request, which the server runs in order", () => {
+  const { query, variables } = buildRequest([
+    ["first", operation("performerUpdate", { input: { id: "1", favorite: true } }, { id: true })],
+    ["second", operation("performerUpdate", { input: { id: "2", favorite: false } }, { id: true })],
+  ]);
+  expect(query).toBe(
+    "mutation($first_input:PerformerUpdateInput!,$second_input:PerformerUpdateInput!){first:performerUpdate(input:$first_input){id} second:performerUpdate(input:$second_input){id}}",
+  );
+  expect(variables).toEqual({
+    first_input: { id: "1", favorite: true },
+    second_input: { id: "2", favorite: false },
+  });
+  expectValid(query);
+});
