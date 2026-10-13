@@ -973,7 +973,7 @@ export interface ImageFilterType {
   NOT?: ImageFilterType | null | undefined;
   title?: StringCriterionInput | null | undefined;
   details?: StringCriterionInput | null | undefined;
-  /** Filter by image id */
+  /**  Filter by image id */
   id?: IntCriterionInput | null | undefined;
   /** Filter by file checksum */
   checksum?: StringCriterionInput | null | undefined;

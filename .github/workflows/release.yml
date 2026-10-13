@@ -57,6 +57,7 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
 
+      # `schema` also regenerates the code; without a schema change nothing needs regenerating.
       - name: Update the schema
         if: needs.plan.outputs.schema == 'true'
         run: bun run schema "${{ needs.plan.outputs.stash }}"
@@ -64,7 +65,6 @@ jobs:
       - name: Set the version
         run: bun pm version "${{ needs.plan.outputs.version }}" --no-git-tag-version --allow-same-version
 
-      - run: bun run generate
       - run: bun run verify
       - run: bun run build
       - name: Show the package contents

@@ -2,18 +2,20 @@
  * Decides whether a new npm version has to be published and which one.
  *
  * The package version follows the Stash release it was generated from: Stash v0.31.x publishes
- * as 0.31.N, where N counts the releases made for that series. A release is needed when Stash
- * has a newer release than the committed schema, when the version in package.json was never
- * published (a previous run failed half way), or when forced.
+ * as 0.31.N, where N counts the releases made for that series. A release is needed when the
+ * GraphQL schema of the latest Stash release differs from the committed one (most Stash releases
+ * don't touch it), when the version in package.json was never published (a previous run failed
+ * half way), or when forced.
  *
  * Usage: `bun scripts/release-plan.ts` prints `key=value` lines for $GITHUB_OUTPUT.
  * Set FORCE=true to publish even though nothing changed, GITHUB_TOKEN to avoid API rate limits.
  */
+import { latestStashRelease, schemaFingerprint } from "./stash-repo.ts";
 
 export interface ReleasePlan {
   /** Whether a release has to happen. */
   release: boolean;
-  /** Whether the committed schema is older than the latest Stash release. */
+  /** Whether the committed schema differs from the latest Stash release. */
   schema: boolean;
   /** The latest Stash release tag, e.g. v0.31.1. */
   stash: string;
@@ -24,8 +26,10 @@ export interface ReleasePlan {
 export interface ReleaseState {
   /** Tag of the latest Stash release. */
   latest: string;
-  /** Tag of the Stash release the committed schema comes from. */
-  tracked: string;
+  /** Fingerprint of the schema in the latest Stash release. */
+  latestSchema: string;
+  /** Fingerprint of the committed schema. */
+  trackedSchema: string;
   /** Version in package.json. */
   current: string;
   /** Versions already on the npm registry. */
@@ -34,8 +38,8 @@ export interface ReleaseState {
 }
 
 export function planRelease(state: ReleaseState): ReleasePlan {
-  const { latest, tracked, current, published, force } = state;
-  const schema = tracked !== latest;
+  const { latest, latestSchema, trackedSchema, current, published, force } = state;
+  const schema = trackedSchema !== latestSchema;
   const unpublished = !published.includes(current);
   if (!schema && !unpublished && !force) {
     return { release: false, schema, stash: latest, version: current };
@@ -58,13 +62,6 @@ export function planRelease(state: ReleaseState): ReleasePlan {
   };
 }
 
-async function getJson(url: string, headers: Record<string, string> = {}): Promise<unknown> {
-  const response = await fetch(url, { headers });
-  if (response.status === 404) return undefined;
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
-  return response.json();
-}
-
 function field(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 }
@@ -74,28 +71,25 @@ function text(value: unknown, what: string) {
   return value;
 }
 
+async function getRegistryVersions(name: string) {
+  const response = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}`);
+  if (response.status === 404) return [];
+  if (!response.ok) throw new Error(`npm registry failed: HTTP ${response.status}`);
+  const versions = field(await response.json(), "versions");
+  return typeof versions === "object" && versions !== null ? Object.keys(versions) : [];
+}
+
 if (import.meta.main) {
   const pkg: unknown = await Bun.file("package.json").json();
-  const name = text(field(pkg, "name"), "package name");
-  const token = process.env["GITHUB_TOKEN"];
-  const latest = text(
-    field(
-      await getJson(
-        "https://api.github.com/repos/stashapp/stash/releases/latest",
-        token === undefined || token === "" ? {} : { authorization: `Bearer ${token}` },
-      ),
-      "tag_name",
-    ),
-    "latest Stash release",
-  );
-  const registry = await getJson(`https://registry.npmjs.org/${name.replace("/", "%2F")}`);
-  const versions = field(registry, "versions");
+  const latest = await latestStashRelease();
+  const header = (await Bun.file("schema/stash.graphql").text()).match(/^# Stash \S+ (\S+)/);
 
   const plan = planRelease({
     latest,
-    tracked: (await Bun.file("schema/stash.graphql").text()).match(/^# Stash (\S+)/)?.[1] ?? "",
+    latestSchema: await schemaFingerprint(latest),
+    trackedSchema: header?.[1] ?? "",
     current: text(field(pkg, "version"), "package version"),
-    published: typeof versions === "object" && versions !== null ? Object.keys(versions) : [],
+    published: await getRegistryVersions(text(field(pkg, "name"), "package name")),
     force: process.env["FORCE"] === "true",
   });
   for (const [key, value] of Object.entries(plan)) console.log(`${key}=${value}`);
