@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 const dir = new URL("../.readme/", import.meta.url);
 const importCreateStash = `import { createStash } from "stash-graphql-client";\n`;
@@ -46,7 +47,7 @@ test("the TypeScript examples in the README type-check", async () => {
     ),
   );
 
-  const tsc = Bun.spawn(["bun", "tsc", "-p", dir.pathname.slice(1)], { stdout: "pipe" });
+  const tsc = Bun.spawn(["bun", "tsc", "-p", fileURLToPath(dir)], { stdout: "pipe" });
   const output = await new Response(tsc.stdout).text();
   expect(output).toBe("");
   expect(await tsc.exited).toBe(0);
