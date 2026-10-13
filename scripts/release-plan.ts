@@ -49,9 +49,14 @@ export function planRelease(state: ReleaseState): ReleasePlan {
 
   const { major, minor } = semver.parse(latest) ?? never(`Invalid Stash release ${latest}`);
   const series = `${major}.${minor}.x`;
-  // A failed earlier run already bumped package.json: publish that version instead of skipping it.
-  if (!schema && unpublished && !force && semver.satisfies(current, series)) {
-    return { release: true, schema, stash, version: current };
+  if (!schema && !force) {
+    // A failed earlier run already bumped package.json: publish that version instead of skipping it.
+    if (semver.satisfies(current, series))
+      return { release: true, schema, stash, version: current };
+    // package.json is stale, but this series was already published: nothing to release.
+    if (published.some((version) => semver.satisfies(version, series))) {
+      return { release: false, schema, stash, version: current };
+    }
   }
   const highest = semver.maxSatisfying([...published, current], series);
   const version = highest === null ? `${major}.${minor}.0` : semver.inc(highest, "patch");

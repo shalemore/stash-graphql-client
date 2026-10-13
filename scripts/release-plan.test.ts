@@ -59,3 +59,8 @@ test("the first release moves from the placeholder version to the Stash series",
   const plan = planRelease({ ...base, current: "0.1.0", published: [] });
   expect(plan).toMatchObject({ release: true, schema: false, version: "0.31.0" });
 });
+
+test("a stale package.json does not cause a duplicate release of a published series", () => {
+  const plan = planRelease({ ...base, current: "0.1.0", published: ["0.0.0-stage", "0.31.0"] });
+  expect(plan).toMatchObject({ release: false, schema: false });
+});
