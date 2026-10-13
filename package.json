@@ -1,0 +1,52 @@
+{
+  "name": "@shalemore/stash-api",
+  "version": "0.1.0",
+  "description": "Fully typed client for the Stash GraphQL API, without writing GraphQL",
+  "keywords": [
+    "graphql",
+    "stash",
+    "stashapp",
+    "typescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shalemore/stash-api.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./operations": {
+      "types": "./dist/operations.d.ts",
+      "default": "./dist/operations.js"
+    }
+  },
+  "scripts": {
+    "lint": "oxfmt --check && oxlint",
+    "fix": "oxfmt && oxlint --fix",
+    "schema": "bun scripts/schema.ts && bun run generate",
+    "generate": "bun scripts/generate.ts && oxfmt schema src/generated",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "graphql-ws": "^6.3.0"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "^1.0.11",
+    "@tsconfig/strictest": "^2.0.8",
+    "@types/bun": "^1.4.3",
+    "graphql": "^17.0.2",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
+    "oxlint-tsgolint": "^7.0.2004",
+    "typescript": "^7.0.2"
+  },
+  "packageManager": "bun@1.4.3"
+}

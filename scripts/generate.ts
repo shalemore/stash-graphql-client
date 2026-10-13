@@ -1,0 +1,199 @@
+/**
+ * Generates src/generated from schema/stash.graphql:
+ * - schema.ts: enums, input types and output type descriptions, with the official docs (types only);
+ * - roots.ts: kind and argument types of every root field, used by `createStash`;
+ * - operations.ts: one tree-shakable builder per root field, each carrying its own metadata.
+ */
+import {
+  buildSchema,
+  getNamedType,
+  type GraphQLArgument,
+  type GraphQLField,
+  type GraphQLInputField,
+  type GraphQLInputType,
+  type GraphQLOutputType,
+  isEnumType,
+  isInputObjectType,
+  isInterfaceType,
+  isListType,
+  isNonNullType,
+  isObjectType,
+  isScalarType,
+  isUnionType,
+} from "graphql";
+
+/** Client methods; a root field with the same name would be shadowed. */
+const RESERVED = new Set(["run", "batch", "subscribe", "request"]);
+const JS_RESERVED = new Set(["delete", "import", "export", "default", "new", "function", "class"]);
+
+/** JSON shape of Stash scalars. */
+const SCALARS: Record<string, string> = {
+  ID: "string",
+  String: "string",
+  Int: "number",
+  Float: "number",
+  Boolean: "boolean",
+  Int64: "number",
+  Time: "string",
+  Timestamp: "string",
+  Map: "Record<string, unknown>",
+  BoolMap: "Record<string, boolean>",
+  PluginConfigMap: "Record<string, Record<string, unknown>>",
+  Any: "unknown",
+  Upload: "Blob",
+};
+
+const source = await Bun.file("schema/stash.graphql").text();
+const version = /^# Stash (\S+)/.exec(source)?.[1] ?? "unknown";
+const schema = buildSchema(source);
+const ROOT_TYPES = [
+  ["query", schema.getQueryType()],
+  ["mutation", schema.getMutationType()],
+  ["subscription", schema.getSubscriptionType()],
+] as const;
+
+function scalar(name: string) {
+  const type = SCALARS[name];
+  if (type === undefined) throw new Error(`Unknown scalar ${name}, add it to SCALARS`);
+  return type;
+}
+
+/** JSDoc from the schema description and deprecation reason. */
+function doc(
+  item: { description?: string | null | undefined; deprecationReason?: string | null | undefined },
+  indent: string,
+) {
+  const lines = (item.description ?? "").split("\n").filter((line) => line.trim() !== "");
+  if (item.deprecationReason !== null && item.deprecationReason !== undefined) {
+    lines.push(`@deprecated ${item.deprecationReason}`);
+  }
+  if (lines.length === 0) return "";
+  const body = lines.map((line) => line.replaceAll("*/", "*\\/"));
+  return body.length === 1
+    ? `${indent}/** ${body[0]} */\n`
+    : `${indent}/**\n${body.map((line) => `${indent} * ${line}`).join("\n")}\n${indent} */\n`;
+}
+
+function input(type: GraphQLInputType): string {
+  if (isNonNullType(type)) return input(type.ofType);
+  if (isListType(type)) {
+    const item = input(type.ofType);
+    return isNonNullType(type.ofType) || item === "unknown"
+      ? `Array<${item}>`
+      : `Array<${item} | null>`;
+  }
+  return isScalarType(type) ? scalar(type.name) : type.name;
+}
+
+/** Optional inputs also accept undefined, so callers can spread partial objects. */
+function inputField(value: GraphQLInputField | GraphQLArgument, indent: string) {
+  const type = input(value.type);
+  const declaration = isNonNullType(value.type)
+    ? `${value.name}: ${type}`
+    : `${value.name}?: ${type === "unknown" ? type : `${type} | null | undefined`}`;
+  return `${doc(value, indent)}${indent}${declaration};`;
+}
+
+function output(type: GraphQLOutputType, nullable = true): string {
+  if (isNonNullType(type)) return output(type.ofType, false);
+  const inner = isListType(type)
+    ? `L<${output(type.ofType)}>`
+    : isScalarType(type)
+      ? scalar(type.name)
+      : isEnumType(type)
+        ? type.name
+        : `R<"${type.name}">`;
+  return nullable ? `N<${inner}>` : inner;
+}
+
+function args(list: readonly GraphQLArgument[], indent: string) {
+  if (list.length === 0) return "{}";
+  return `{\n${list.map((arg) => inputField(arg, `${indent}  `)).join("\n")}\n${indent}}`;
+}
+
+function field(value: GraphQLField<unknown, unknown>) {
+  return `${doc(value, "    ")}    ${value.name}: F<${args(value.args, "    ")}, ${output(value.type)}>;`;
+}
+
+const declarations: string[] = [];
+const objects: string[] = [];
+const abstracts: string[] = [];
+for (const type of Object.values(schema.getTypeMap())) {
+  if (type.name.startsWith("__")) continue;
+  if (isEnumType(type)) {
+    const values = type.getValues().map((value) => JSON.stringify(value.name));
+    declarations.push(`${doc(type, "")}export type ${type.name} = ${values.join(" | ")};`);
+  } else if (isInputObjectType(type)) {
+    const fields = Object.values(type.getFields()).map((value) => inputField(value, "  "));
+    declarations.push(`${doc(type, "")}export interface ${type.name} {\n${fields.join("\n")}\n}`);
+  } else if (isObjectType(type) || isInterfaceType(type)) {
+    const fields = Object.values(type.getFields());
+    objects.push(`${doc(type, "  ")}  ${type.name}: {\n${fields.map(field).join("\n")}\n  };`);
+    // Nested arguments are written as literals, which is only safe for scalars.
+    if (!ROOT_TYPES.some(([, root]) => root === type)) {
+      for (const value of fields) {
+        for (const arg of value.args) {
+          if (!isScalarType(getNamedType(arg.type))) {
+            throw new Error(
+              `Unsupported non-scalar argument ${type.name}.${value.name}(${arg.name})`,
+            );
+          }
+        }
+      }
+    }
+  } else if (isUnionType(type)) {
+    objects.push(`${doc(type, "  ")}  ${type.name}: {};`);
+  }
+  if (isUnionType(type) || isInterfaceType(type)) {
+    const members = schema.getPossibleTypes(type).map((member) => JSON.stringify(member.name));
+    abstracts.push(`  ${type.name}: ${members.join(" | ")};`);
+  }
+}
+
+/** Whether an input type can contain an Upload, so only those requests look for files. */
+function hasUpload(type: GraphQLInputType, seen = new Set<string>()): boolean {
+  const named = getNamedType(type);
+  if (seen.has(named.name)) return false;
+  seen.add(named.name);
+  if (isScalarType(named)) return named.name === "Upload";
+  return isInputObjectType(named)
+    ? Object.values(named.getFields()).some((value) => hasUpload(value.type, seen))
+    : false;
+}
+
+const roots: Record<string, [string, Record<string, string>, true?]> = {};
+const builders: string[] = [];
+for (const [kind, type] of ROOT_TYPES) {
+  for (const value of Object.values(type?.getFields() ?? {})) {
+    if (RESERVED.has(value.name) || JS_RESERVED.has(value.name) || value.name in roots) {
+      throw new Error(`Root field ${value.name} clashes with a client method or reserved word`);
+    }
+    const types = Object.fromEntries(value.args.map((arg) => [arg.name, String(arg.type)]));
+    const upload = value.args.some((arg) => hasUpload(arg.type));
+    roots[value.name] = upload ? [kind, types, true] : [kind, types];
+    builders.push(
+      `${doc(value, "")}export const ${value.name} = /* @__PURE__ */ define("${value.name}", "${kind}", ${JSON.stringify(types)}${upload ? ", true" : ""});`,
+    );
+  }
+}
+
+const header = `// Generated by scripts/generate.ts from the schema of Stash ${version}. Do not edit.\n`;
+await Bun.write(
+  "src/generated/schema.ts",
+  `${header}import type { F, L, N, R } from "../types.ts";\n\n` +
+    `/** The Stash release this client was generated from. */\n` +
+    `export type StashVersion = ${JSON.stringify(version)};\n\n` +
+    `${declarations.join("\n\n")}\n\n` +
+    `export interface Objects {\n${objects.join("\n")}\n}\n\n` +
+    `export interface Abstract {\n${abstracts.join("\n")}\n}\n`,
+);
+await Bun.write(
+  "src/generated/roots.ts",
+  `${header}export const STASH_VERSION = ${JSON.stringify(version)};\n\n` +
+    `export const ROOTS: Record<string, ["query" | "mutation" | "subscription", Record<string, string>, true?]> = ${JSON.stringify(roots)};\n`,
+);
+await Bun.write(
+  "src/generated/operations.ts",
+  `${header}import { define } from "../define.ts";\n\n${builders.join("\n\n")}\n`,
+);
+console.log(`Generated ${Object.keys(roots).length} root fields from Stash ${version}`);

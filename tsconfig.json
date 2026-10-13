@@ -1,0 +1,11 @@
+{
+  "extends": ["@tsconfig/bun", "@tsconfig/strictest"],
+  "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
+    "paths": {
+      "@shalemore/stash-api": ["./src/index.ts"],
+      "@shalemore/stash-api/operations": ["./src/operations.ts"]
+    }
+  },
+  "include": ["src", "scripts", "example"]
+}
