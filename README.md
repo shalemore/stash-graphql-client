@@ -1,4 +1,4 @@
-# @shalemore/stash-api
+# stash-graphql-client
 
 A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL API, without writing GraphQL.
 
@@ -10,13 +10,13 @@ A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL 
 Generated from the official schema of the latest Stash release (exported as `STASH_VERSION`), with its field descriptions and deprecations as JSDoc.
 
 ```sh
-bun add @shalemore/stash-api
+bun add stash-graphql-client
 ```
 
 ## Quick start
 
 ```ts
-import { createStash } from "@shalemore/stash-api";
+import { createStash } from "stash-graphql-client";
 
 const stash = createStash({
   endpoint: "http://localhost:9999/graphql",
@@ -107,7 +107,7 @@ for (const file of image?.visual_files ?? []) {
 Every enum and input type of the schema is exported under its original name:
 
 ```ts
-import type { CriterionModifier, SceneFilterType } from "@shalemore/stash-api";
+import type { CriterionModifier, SceneFilterType } from "stash-graphql-client";
 
 const favorites: SceneFilterType = {
   performer_favorite: true,
@@ -122,7 +122,7 @@ await stash.findScenes({ scene_filter: favorites }, { count: true });
 A selection is a plain object, so share it like a fragment and derive its type with `Result`:
 
 ```ts
-import type { Result, Selection } from "@shalemore/stash-api";
+import type { Result, Selection } from "stash-graphql-client";
 
 export const performerCard = {
   id: true,
@@ -151,7 +151,7 @@ const { performers } = await stash.findPerformers(undefined, { performers: perfo
 Describe each call with `operation()` and send them together. The keys become aliases:
 
 ```ts
-import { operation } from "@shalemore/stash-api";
+import { operation } from "stash-graphql-client";
 
 const totals = await stash.batch({
   scenes: operation("findScenes", undefined, { count: true }),
@@ -225,7 +225,7 @@ const data = await stash.request(`query ($id: ID!) { scene: findScene(id: $id) {
 To use another GraphQL client, `buildRequest` returns the standard `{ query, variables }` body for any operation:
 
 ```ts
-import { buildRequest, operation } from "@shalemore/stash-api";
+import { buildRequest, operation } from "stash-graphql-client";
 
 const body = buildRequest([[undefined, operation("findScenes", undefined, { count: true })]]);
 // { query: "query{findScenes{count}}", variables: {} }
@@ -236,7 +236,7 @@ const body = buildRequest([[undefined, operation("findScenes", undefined, { coun
 Failed requests throw a `StashError` with the HTTP status and the GraphQL errors. GraphQL may return data next to errors; that partial `data` is available on the error. Stash validates arguments on the server, so a typo that slips past the type checker comes back as a readable error:
 
 ```ts
-import { StashError } from "@shalemore/stash-api";
+import { StashError } from "stash-graphql-client";
 
 try {
   await stash.findScene({ id: "42" }, { id: true });
@@ -258,10 +258,10 @@ createStash({
 
 ## Smaller bundles
 
-`createStash` carries the argument types of every root field, so it bundles to about 4.5 KB gzipped (plus a lazily loaded 4 KB chunk for subscriptions that is only fetched when you subscribe). For the smallest browser bundles, import operations one by one from `@shalemore/stash-api/operations` and run them with `createRunner`; unused operations are tree-shaken away, and a single operation bundles to under 2 KB:
+`createStash` carries the argument types of every root field, so it bundles to about 4.5 KB gzipped (plus a lazily loaded 4 KB chunk for subscriptions that is only fetched when you subscribe). For the smallest browser bundles, import operations one by one from `stash-graphql-client/operations` and run them with `createRunner`; unused operations are tree-shaken away, and a single operation bundles to under 2 KB:
 
 ```ts
-import { createRunner, findScenes } from "@shalemore/stash-api/operations";
+import { createRunner, findScenes } from "stash-graphql-client/operations";
 
 const stash = createRunner({ endpoint: "/graphql" });
 const { count } = await stash.run(findScenes(undefined, { count: true }));

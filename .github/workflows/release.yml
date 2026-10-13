@@ -83,7 +83,7 @@ jobs:
       - name: Publish to npm
         run: |
           [ -z "$NPM_TOKEN" ] || echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
-          npm publish --provenance --access public
+          npm publish --provenance
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 

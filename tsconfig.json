@@ -3,8 +3,8 @@
   "compilerOptions": {
     "rewriteRelativeImportExtensions": true,
     "paths": {
-      "@shalemore/stash-api": ["./src/index.ts"],
-      "@shalemore/stash-api/operations": ["./src/operations.ts"]
+      "stash-graphql-client": ["./src/index.ts"],
+      "stash-graphql-client/operations": ["./src/operations.ts"]
     }
   },
   "include": ["src", "scripts", "example"]

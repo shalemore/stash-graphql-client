@@ -1,9 +1,9 @@
 /**
- * How a project uses @shalemore/stash-api. Run with:
+ * How a project uses stash-graphql-client. Run with:
  *
  *   STASH_URL=http://localhost:9999 STASH_API_KEY=... bun example/index.ts
  *
- * In your own project, install it with `bun add @shalemore/stash-api`; the imports stay the same.
+ * In your own project, install it with `bun add stash-graphql-client`; the imports stay the same.
  */
 import {
   createStash,
@@ -12,7 +12,7 @@ import {
   StashError,
   type Result,
   type Selection,
-} from "@shalemore/stash-api";
+} from "stash-graphql-client";
 
 const stash = createStash({
   endpoint: `${process.env["STASH_URL"] ?? "http://localhost:9999"}/graphql`,

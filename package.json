@@ -1,5 +1,5 @@
 {
-  "name": "@shalemore/stash-api",
+  "name": "stash-graphql-client",
   "version": "0.1.0",
   "description": "Fully typed client for the Stash GraphQL API, without writing GraphQL",
   "keywords": [
@@ -11,7 +11,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shalemore/stash-api.git"
+    "url": "git+https://github.com/shalemore/stash-graphql-client.git"
   },
   "files": [
     "dist"
@@ -27,9 +27,6 @@
       "types": "./dist/operations.d.ts",
       "default": "./dist/operations.js"
     }
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "scripts": {
     "lint": "oxfmt --check && oxlint",

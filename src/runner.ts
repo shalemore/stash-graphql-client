@@ -142,7 +142,7 @@ export function createTransport(options: StashOptions) {
   };
 }
 
-/** A client without per-field methods; pair it with `@shalemore/stash-api/operations`. */
+/** A client without per-field methods; pair it with `stash-graphql-client/operations`. */
 export function createRunner(options: StashOptions): StashRunner {
   const runner: object = createTransport(options);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- results are typed by the operations

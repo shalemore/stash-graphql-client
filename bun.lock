@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@shalemore/stash-api",
+      "name": "stash-graphql-client",
       "dependencies": {
         "graphql-ws": "^6.3.0",
       },

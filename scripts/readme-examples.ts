@@ -7,8 +7,8 @@ import {
   type Result,
   type SceneFilterType,
   type Selection,
-} from "@shalemore/stash-api";
-import { createRunner, findScenes } from "@shalemore/stash-api/operations";
+} from "stash-graphql-client";
+import { createRunner, findScenes } from "stash-graphql-client/operations";
 
 /** Type-checked by `bun check` so the README examples cannot drift from the API. */
 export async function readmeExamples() {
