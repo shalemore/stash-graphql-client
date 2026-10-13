@@ -52,7 +52,9 @@ export interface StashRunner {
   batch<const B extends Record<string, Operation<RequestField>>>(
     operations: B,
   ): Promise<{
-    [A in keyof B]: B[A] extends Operation<infer K, infer S> ? OperationResult<K, S> : never;
+    -readonly [A in keyof B]: B[A] extends Operation<infer K, infer S>
+      ? OperationResult<K, S>
+      : never;
   }>;
   /** Streams a subscription; leaving the loop unsubscribes. */
   subscribe<K extends SubscriptionField, S>(

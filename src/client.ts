@@ -1,4 +1,3 @@
-import { define } from "./define.ts";
 import { ROOTS } from "./generated/roots.ts";
 import {
   createTransport,
@@ -7,12 +6,14 @@ import {
   type Subscription,
 } from "./runner.ts";
 import type {
+  ArgsInput,
   CallInput,
   Root,
   Operation,
   OperationResult,
   RootField,
   RootSelection,
+  ScalarField,
   SubscriptionField,
 } from "./types.ts";
 
@@ -27,14 +28,24 @@ type RootMethods = {
 /** A client with one method per root field, plus `run`, `batch`, `subscribe` and `request`. */
 export interface StashClient extends RootMethods, StashRunner {}
 
-/** Describes a root field call without sending it, for `stash.batch` or `stash.run`. */
+/**
+ * Describes a root field call without sending it, for `stash.batch` or `stash.run`.
+ * The selection is its own parameter so that its type can be inferred.
+ */
+export function operation<K extends ScalarField>(
+  field: K,
+  args: ArgsInput<K>,
+): Operation<K, undefined>;
 export function operation<K extends RootField, const S extends RootSelection<K>>(
   field: K,
-  ...input: CallInput<K, S>
-): Operation<K, S> {
+  args: ArgsInput<K>,
+  select: S,
+): Operation<K, S>;
+export function operation(field: RootField, args: object | undefined, select?: unknown) {
   const root = ROOTS[field];
   if (root === undefined) throw new Error(`Unknown root field: ${field}`);
-  return define(field, ...root)(...input);
+  const [kind, types, upload] = root;
+  return { field, kind, types, args, select, ...(upload ? { upload } : {}) };
 }
 
 export function createStash(options: StashOptions): StashClient {

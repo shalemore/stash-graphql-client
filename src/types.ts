@@ -101,6 +101,15 @@ export type Args<K extends RootField> =
 export type RootSelection<K extends RootField> =
   Unwrap<RootType<K>> extends R<infer Name> ? Selection<Name> : never;
 
+/** Root fields that return a scalar and therefore take no selection. */
+export type ScalarField = {
+  [K in RootField]: [RootSelection<K>] extends [never] ? K : never;
+}[RootField];
+
+/** Arguments of a root field; they can be left out when none of them is required. */
+export type ArgsInput<K extends RootField> =
+  HasRequired<Args<K>> extends true ? Args<K> : Args<K> | undefined;
+
 /** Parameters of a root field call: a selection is required when the field returns an object. */
 export type CallInput<K extends RootField, S> =
   Unwrap<RootType<K>> extends R<ObjectName>
