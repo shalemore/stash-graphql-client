@@ -8,8 +8,11 @@
  * half way), or when forced.
  *
  * Usage: `bun scripts/release-plan.ts` prints `key=value` lines for $GITHUB_OUTPUT.
- * Set FORCE=true to publish even though nothing changed, GITHUB_TOKEN to avoid API rate limits.
+ * Set FORCE=true to publish even though nothing changed.
  */
+import semver from "semver";
+import { z } from "zod";
+
 import { latestStashRelease, schemaFingerprint } from "./stash-repo.ts";
 
 export interface ReleasePlan {
@@ -41,46 +44,38 @@ export function planRelease(state: ReleaseState): ReleasePlan {
   const { latest, latestSchema, trackedSchema, current, published, force } = state;
   const schema = trackedSchema !== latestSchema;
   const unpublished = !published.includes(current);
-  if (!schema && !unpublished && !force) {
-    return { release: false, schema, stash: latest, version: current };
-  }
-  const series = latest.replace(/^v/, "").split(".").slice(0, 2).join(".");
-  const inSeries = (version: string) => version.startsWith(`${series}.`);
+  const stash = latest;
+  if (!schema && !unpublished && !force) return { release: false, schema, stash, version: current };
+
+  const { major, minor } = semver.parse(latest) ?? never(`Invalid Stash release ${latest}`);
+  const series = `${major}.${minor}.x`;
   // A failed earlier run already bumped package.json: publish that version instead of skipping it.
-  if (!schema && unpublished && !force && inSeries(current)) {
-    return { release: true, schema, stash: latest, version: current };
+  if (!schema && unpublished && !force && semver.satisfies(current, series)) {
+    return { release: true, schema, stash, version: current };
   }
-  const patches = [...published, current].flatMap((version) => {
-    const patch = version.slice(series.length + 1);
-    return inSeries(version) && /^\d+$/.test(patch) ? [Number(patch)] : [];
-  });
-  return {
-    release: true,
-    schema,
-    stash: latest,
-    version: `${series}.${Math.max(-1, ...patches) + 1}`,
-  };
+  const highest = semver.maxSatisfying([...published, current], series);
+  const version = highest === null ? `${major}.${minor}.0` : semver.inc(highest, "patch");
+  return { release: true, schema, stash, version: version ?? never(`Cannot bump ${highest}`) };
 }
 
-function field(value: unknown, key: string): unknown {
-  return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
+function never(message: string): never {
+  throw new Error(message);
 }
 
-function text(value: unknown, what: string) {
-  if (typeof value !== "string" || value === "") throw new Error(`Missing ${what}`);
-  return value;
-}
-
-async function getRegistryVersions(name: string) {
+async function getPublishedVersions(name: string) {
   const response = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}`);
   if (response.status === 404) return [];
   if (!response.ok) throw new Error(`npm registry failed: HTTP ${response.status}`);
-  const versions = field(await response.json(), "versions");
-  return typeof versions === "object" && versions !== null ? Object.keys(versions) : [];
+  const { versions } = z
+    .object({ versions: z.record(z.string(), z.unknown()) })
+    .parse(await response.json());
+  return Object.keys(versions);
 }
 
 if (import.meta.main) {
-  const pkg: unknown = await Bun.file("package.json").json();
+  const pkg = z
+    .object({ name: z.string(), version: z.string() })
+    .parse(await Bun.file("package.json").json());
   const latest = await latestStashRelease();
   const header = (await Bun.file("schema/stash.graphql").text()).match(/^# Stash \S+ (\S+)/);
 
@@ -88,8 +83,8 @@ if (import.meta.main) {
     latest,
     latestSchema: await schemaFingerprint(latest),
     trackedSchema: header?.[1] ?? "",
-    current: text(field(pkg, "version"), "package version"),
-    published: await getRegistryVersions(text(field(pkg, "name"), "package name")),
+    current: pkg.version,
+    published: await getPublishedVersions(pkg.name),
     force: process.env["FORCE"] === "true",
   });
   for (const [key, value] of Object.entries(plan)) console.log(`${key}=${value}`);
