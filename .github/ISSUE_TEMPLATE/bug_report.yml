@@ -1,0 +1,25 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead? Include the error message if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code to reproduce
+      description: The smallest selection or call that shows the problem.
+      render: ts
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: stash-graphql-client, Stash server, and your runtime (Bun, Node, browser).
+      placeholder: "stash-graphql-client 0.31.0, Stash v0.30.0, Bun 1.4"
+    validations:
+      required: true
