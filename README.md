@@ -7,7 +7,7 @@ A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL 
 - **No runtime dependencies.** It uses the platform `fetch`. Turning a selection into a request takes about 4 µs, roughly 10x faster than printing a GraphQL document.
 - **Covers the whole API.** Queries, mutations, subscriptions (via [`graphql-ws`](https://github.com/enisdenjo/graphql-ws)) and file uploads are supported. Anything else can be sent as a plain GraphQL document.
 
-Generated from the official schema of Stash v0.31.1, with its field descriptions and deprecations as JSDoc.
+Generated from the official schema of the latest Stash release (exported as `STASH_VERSION`), with its field descriptions and deprecations as JSDoc.
 
 ```sh
 bun add @shalemore/stash-api
@@ -207,7 +207,7 @@ const body = buildRequest([[undefined, operation("findScenes", undefined, { coun
 
 ## Errors
 
-Failed requests throw a `StashError` with the HTTP status and the GraphQL errors. Stash validates arguments on the server, so a typo that slips past the type checker comes back as a readable error:
+Failed requests throw a `StashError` with the HTTP status and the GraphQL errors. GraphQL may return data next to errors; that partial `data` is available on the error. Stash validates arguments on the server, so a typo that slips past the type checker comes back as a readable error:
 
 ```ts
 import { StashError } from "@shalemore/stash-api";
@@ -232,7 +232,7 @@ createStash({
 
 ## Smaller bundles
 
-`createStash` carries the argument types of every root field, so it bundles to about 4 KB gzipped. For the smallest browser bundles, import operations one by one from `@shalemore/stash-api/operations` and run them with `createRunner`; unused operations are tree-shaken away, and a single operation bundles to under 2 KB:
+`createStash` carries the argument types of every root field, so it bundles to about 4.5 KB gzipped (plus a lazily loaded 4 KB chunk for subscriptions that is only fetched when you subscribe). For the smallest browser bundles, import operations one by one from `@shalemore/stash-api/operations` and run them with `createRunner`; unused operations are tree-shaken away, and a single operation bundles to under 2 KB:
 
 ```ts
 import { createRunner, findScenes } from "@shalemore/stash-api/operations";

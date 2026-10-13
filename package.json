@@ -28,12 +28,16 @@
       "default": "./dist/operations.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "lint": "oxfmt --check && oxlint",
     "fix": "oxfmt && oxlint --fix",
     "schema": "bun scripts/schema.ts && bun run generate",
     "generate": "bun scripts/generate.ts && oxfmt schema src/generated",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "verify": "bun check && bun run lint && bun test"
   },
   "dependencies": {
     "graphql-ws": "^6.3.0"

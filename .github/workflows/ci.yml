@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  check:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -14,7 +14,8 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+      # The generated code is committed, so it must match the committed schema.
       - run: bun run generate
-      - run: bun check
-      - run: bun run lint
-      - run: bun test
+      - run: git diff --exit-code
+      - run: bun run verify
+      - run: bun run build

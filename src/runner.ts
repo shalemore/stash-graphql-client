@@ -28,12 +28,20 @@ export interface StashOptions {
 export class StashError extends Error {
   readonly status: number;
   readonly errors: readonly { message: string }[];
+  /** The `data` of a partial result: GraphQL can return data next to errors. */
+  readonly data: Record<string, unknown> | undefined;
 
-  constructor(message: string, status: number, errors: { message: string }[] = []) {
+  constructor(
+    message: string,
+    status: number,
+    errors: { message: string }[] = [],
+    data?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "StashError";
     this.status = status;
     this.errors = errors;
+    this.data = data;
   }
 }
 
@@ -178,7 +186,8 @@ function readData(payload: unknown, status: number, ok: boolean) {
       : [];
   if (!ok || errors.length > 0) {
     const message = errors.map((error) => error.message).join("\n");
-    throw new StashError(message || `HTTP ${status}`, status, errors);
+    const data = isObject(payload) && isObject(payload["data"]) ? payload["data"] : undefined;
+    throw new StashError(message || `HTTP ${status}`, status, errors, data);
   }
   return isObject(payload) && isObject(payload["data"]) ? payload["data"] : {};
 }

@@ -128,3 +128,16 @@ test("request passes any GraphQL document through", async () => {
 function text(value: unknown) {
   return typeof value === "string" ? value : "";
 }
+
+test("keeps the partial data of a response that also has errors", async () => {
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    fetch: async () =>
+      Response.json({ data: { findScenes: { count: 3 } }, errors: [{ message: "partial" }] }),
+  });
+  const error = await stash
+    .findScenes(undefined, { count: true })
+    .catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(StashError);
+  expect(error instanceof StashError && error.data).toEqual({ findScenes: { count: 3 } });
+});

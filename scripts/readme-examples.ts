@@ -1,5 +1,3 @@
-import { createClient } from "graphql-ws";
-
 import {
   buildRequest,
   createStash,
@@ -86,10 +84,7 @@ export async function readmeExamples() {
     },
   });
 
-  const live = createStash({
-    endpoint: "http://localhost:9999/graphql",
-    subscriptions: createClient({ url: "ws://localhost:9999/graphql" }),
-  });
+  const live = createStash({ endpoint: "http://localhost:9999/graphql" });
   for await (const update of live.jobsSubscribe(undefined, {
     type: true,
     job: { id: true, description: true, progress: true },
@@ -97,8 +92,6 @@ export async function readmeExamples() {
     console.log(update.type, update.job.progress);
     if (update.type === "REMOVE") break;
   }
-
-  createClient({ url: "ws://localhost:9999/graphql", webSocketImpl: AuthenticatedWebSocket });
 
   await stash.request(`query ($id: ID!) { scene: findScene(id: $id) { id title } }`, { id: "42" });
   const body = buildRequest([[undefined, operation("findScenes", undefined, { count: true })]]);
@@ -113,13 +106,4 @@ export async function readmeExamples() {
   const runner = createRunner({ endpoint: "/graphql" });
   const { count: n2 } = await runner.run(findScenes(undefined, { count: true }));
   console.log(typedPerformers, typedCount, title, typedCards, total, deleted, n2);
-}
-
-class AuthenticatedWebSocket extends WebSocket {
-  constructor(url: string | URL, protocols?: string | string[]) {
-    super(url, {
-      protocols: typeof protocols === "string" ? [protocols] : protocols,
-      headers: { ApiKey: process.env["STASH_API_KEY"] },
-    });
-  }
 }
