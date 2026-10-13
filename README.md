@@ -5,7 +5,7 @@ A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL 
 - **Pick fields with plain objects.** Only the selected fields are requested, and the result type contains exactly those fields with the nullability from the schema.
 - **Everything comes from the schema.** Root fields, arguments, input types and enums are generated from Stash's own schema with the same names. There are no hand-written wrappers to fall behind upstream.
 - **No runtime dependencies.** It uses the platform `fetch`. Turning a selection into a request takes about 4 µs, roughly 10x faster than printing a GraphQL document.
-- **Covers the whole API.** Queries, mutations, subscriptions (via [`graphql-ws`](https://github.com/enisdenjo/graphql-ws)) and file uploads are supported. Anything else can be sent as a plain GraphQL document.
+- **Covers the whole API.** Queries, mutations, subscriptions (via [`graphql-ws`](https://github.com/enisdenjo/graphql-ws)) and file uploads are supported. `@defer` is the one thing left out: Stash declares it but ignores it and always answers with the complete result. Anything else can be sent as a plain GraphQL document.
 
 Generated from the official schema of the latest Stash release (exported as `STASH_VERSION`), with its field descriptions and deprecations as JSDoc.
 
@@ -68,6 +68,23 @@ Fields that take arguments accept them through `$args`:
 const { groups } = await stash.findGroups(undefined, {
   groups: { id: true, name: true, scene_count: { $args: { depth: -1 } } },
 });
+```
+
+### Aliases
+
+Select the same field twice with different arguments by giving each one a name under `$as`. Each alias selects exactly one field:
+
+```ts
+const { files } = await stash.findFiles(undefined, {
+  files: {
+    path: true,
+    $as: {
+      md5: { fingerprint: { $args: { type: "md5" } } },
+      phash: { fingerprint: { $args: { type: "phash" } } },
+    },
+  },
+});
+// files: { path: string; md5: string | null; phash: string | null }[]
 ```
 
 ### Unions and interfaces
@@ -188,7 +205,7 @@ The protocol is handled by [`graphql-ws`](https://github.com/enisdenjo/graphql-w
 
 ## Any other GraphQL
 
-`request` sends a GraphQL document as is. Use it for anything the typed API doesn't model, such as aliases inside a selection, fragments or directives. The result is untyped:
+`request` sends a GraphQL document as is. Use it for anything the typed API doesn't model, such as fragments or directives. The result is untyped:
 
 ```ts
 const data = await stash.request(`query ($id: ID!) { scene: findScene(id: $id) { id title } }`, {

@@ -41,6 +41,17 @@ export async function readmeExamples() {
     groups: { id: true, name: true, scene_count: { $args: { depth: -1 } } },
   });
 
+  const { files } = await stash.findFiles(undefined, {
+    files: {
+      path: true,
+      $as: {
+        md5: { fingerprint: { $args: { type: "md5" } } },
+        phash: { fingerprint: { $args: { type: "phash" } } },
+      },
+    },
+  });
+  console.log(files.map((file) => `${file.path} ${file.md5} ${file.phash}`));
+
   const image = await stash.findImage(
     { id: "7" },
     { visual_files: { $on: { ImageFile: { path: true, width: true, height: true } } } },

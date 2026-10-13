@@ -56,23 +56,30 @@ function selectionSet(select: unknown): string {
     if (key === "$on") {
       // __typename is needed to tell union members apart.
       if (!parts.includes("__typename")) parts.push("__typename");
-      if (isObject(value)) {
-        for (const [type, sub] of Object.entries(value)) {
-          parts.push(`... on ${type}${selectionSet(sub)}`);
-        }
+      for (const [type, sub] of Object.entries(isObject(value) ? value : {})) {
+        parts.push(`... on ${type}${selectionSet(sub)}`);
       }
-      continue;
+    } else if (key === "$as") {
+      for (const [alias, entry] of Object.entries(isObject(value) ? value : {})) {
+        const fields = Object.entries(isObject(entry) ? entry : {});
+        if (fields.length !== 1) throw new Error(`Alias ${alias} must select exactly one field`);
+        for (const [field, sub] of fields) parts.push(selectField(field, sub, alias));
+      }
+    } else if (key !== "__typename" || !parts.includes(key)) {
+      parts.push(selectField(key, value));
     }
-    if (key === "__typename" && parts.includes(key)) continue;
-    const args = isObject(value) && isObject(value["$args"]) ? value["$args"] : {};
-    const literals = Object.entries(args)
-      .filter(([, argument]) => argument !== undefined)
-      .map(([name, argument]) => `${name}:${literal(argument)}`);
-    const call = literals.length > 0 ? `(${literals.join(",")})` : "";
-    parts.push(`${key}${call}${selectionSet(value)}`);
   }
   // A leaf that only carries $args has no sub-selection.
   return parts.length > 0 ? `{${parts.join(" ")}}` : "";
+}
+
+function selectField(field: string, select: unknown, alias?: string) {
+  const args = isObject(select) && isObject(select["$args"]) ? select["$args"] : {};
+  const literals = Object.entries(args)
+    .filter(([, argument]) => argument !== undefined)
+    .map(([name, argument]) => `${name}:${literal(argument)}`);
+  const call = literals.length > 0 ? `(${literals.join(",")})` : "";
+  return `${alias === undefined ? "" : `${alias}:`}${field}${call}${selectionSet(select)}`;
 }
 
 /** Nested arguments are scalars (checked by the generator), so JSON is valid GraphQL syntax. */

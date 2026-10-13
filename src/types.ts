@@ -30,12 +30,21 @@ type Expand<T> = T extends (infer I)[]
 /**
  * Fields to fetch from an object type: `true` for leaves, a nested selection for objects,
  * `$args` for field arguments and `$on` to select per member of a union or interface.
+ * `$as` selects fields under another name, so the same field can be fetched with different
+ * arguments: `$as: { md5: { fingerprint: { $args: { type: "md5" } } } }`.
  */
 export type Selection<Name extends ObjectName> = {
   [K in keyof Objects[Name]]?: FieldSelection<Objects[Name][K]>;
-} & { __typename?: true } & (Name extends keyof Abstract
+} & { $as?: { [alias: string]: AliasedField<Objects[Name]> } } & {
+  __typename?: true;
+} & (Name extends keyof Abstract
     ? { $on?: { [M in Abstract[Name] & ObjectName]?: Selection<M> } }
     : {});
+
+/** An alias selects exactly one field: `{ fieldName: selection }`. */
+type AliasedField<Fields> = {
+  [K in keyof Fields]: { [P in K]: FieldSelection<Fields[K]> };
+}[keyof Fields];
 
 type FieldSelection<Field> =
   Field extends F<infer A, infer T>
@@ -66,7 +75,16 @@ type Picked<Name extends ObjectName, S> = {
   [
     K in keyof S & keyof Objects[Name] as K extends "$args" | "$on" ? never : K
   ]: Objects[Name][K] extends F<unknown, infer T> ? Output<T, S[K]> : never;
-} & (S extends { __typename: true } ? { __typename: Name } : {});
+} & (S extends { $as: infer As } ? AliasOutput<Name, As> : {}) &
+  (S extends { __typename: true } ? { __typename: Name } : {});
+
+type AliasOutput<Name extends ObjectName, As> = {
+  -readonly [A in keyof As]: {
+    [K in keyof As[A] & keyof Objects[Name]]: Objects[Name][K] extends F<unknown, infer T>
+      ? Output<T, As[A][K]>
+      : never;
+  }[keyof As[A] & keyof Objects[Name]];
+};
 
 type ObjectOutput<Name extends ObjectName, S> = Name extends keyof Abstract
   ? S extends { $on: infer On }

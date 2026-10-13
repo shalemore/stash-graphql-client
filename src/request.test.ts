@@ -131,3 +131,31 @@ test("selects common interface fields and member-specific fields together", () =
   );
   expectValid(query);
 });
+
+test("aliases select the same field with different arguments", () => {
+  const { query } = buildRequest([
+    [
+      undefined,
+      operation("findGroups", undefined, {
+        groups: {
+          id: true,
+          $as: {
+            direct: { scene_count: { $args: { depth: 0 } } },
+            all: { scene_count: { $args: { depth: -1 } } },
+          },
+        },
+      }),
+    ],
+  ]);
+  expect(query).toBe(
+    "query{findGroups{groups{id direct:scene_count(depth:0) all:scene_count(depth:-1)}}}",
+  );
+  expectValid(query);
+});
+
+test("an alias must select exactly one field", () => {
+  // The type system rejects this too; the runtime check protects plain JavaScript callers.
+  // @ts-expect-error an alias entry needs a field
+  const call = operation("findGroups", undefined, { groups: { $as: { x: {} } } });
+  expect(() => buildRequest([[undefined, call]])).toThrow("must select exactly one field");
+});

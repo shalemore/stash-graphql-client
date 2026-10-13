@@ -33,6 +33,34 @@ async function resultTypes(stash: StashClient) {
   expectTypeOf(totals).toEqualTypeOf<{ scenes: { count: number }; images: { count: number } }>();
 }
 
+async function aliasTypes(stash: StashClient) {
+  // The same field twice with different arguments.
+  const { groups } = await stash.findGroups(undefined, {
+    groups: {
+      id: true,
+      $as: {
+        direct: { scene_count: { $args: { depth: 0 } } },
+        all: { scene_count: { $args: { depth: -1 } } },
+      },
+    },
+  });
+  expectTypeOf(groups).toEqualTypeOf<{ id: string; direct: number; all: number }[]>();
+
+  // Aliased object fields keep their sub-selection.
+  const image = await stash.findImage(
+    { id: "1" },
+    { $as: { owner: { studio: { id: true, name: true } } } },
+  );
+  expectTypeOf(image).toEqualTypeOf<{ owner: { id: string; name: string } | null } | null>();
+
+  // @ts-expect-error aliases must point at an existing field
+  await stash.findGroups(undefined, { groups: { $as: { x: { nope: true } } } });
+  await stash.findGroups(undefined, {
+    // @ts-expect-error alias arguments are checked against the field they select
+    groups: { $as: { x: { scene_count: { $args: { depth: "all" } } } } },
+  });
+}
+
 async function unionTypes(stash: StashClient) {
   const { files } = await stash.findFiles(undefined, {
     files: {
@@ -88,7 +116,12 @@ async function invalidCalls(stash: StashClient) {
 }
 
 test("compile-time checks are part of `bun check`", () => {
-  expect([resultTypes, unionTypes, operationTypes, reusableSelections, invalidCalls]).toHaveLength(
-    5,
-  );
+  expect([
+    resultTypes,
+    aliasTypes,
+    unionTypes,
+    operationTypes,
+    reusableSelections,
+    invalidCalls,
+  ]).toHaveLength(6);
 });
