@@ -3,16 +3,19 @@
  */
 import { expect, expectTypeOf, test } from "bun:test";
 
-import { type StashClient, operation } from "./client.ts";
-import { findScenes, performerDestroy } from "./operations.ts";
-import type { StashRunner } from "./runner.ts";
-import type { OperationResult, Result, ResultOf, Selection } from "./types.ts";
+import type { StashClient } from "./client.ts";
+import type { Fields, Result } from "./types.ts";
 
 async function resultTypes(stash: StashClient) {
-  const found = await stash.findPerformers(undefined, {
-    count: true,
-    performers: { id: true, name: true, rating100: true, tags: { name: true } },
-  });
+  const found = await stash.findPerformers({ filter: { per_page: 1 } }, (result) => ({
+    count: result.count,
+    performers: result.performers((performer) => ({
+      id: performer.id,
+      name: performer.name,
+      rating100: performer.rating100,
+      tags: performer.tags((tag) => ({ name: tag.name })),
+    })),
+  }));
   expectTypeOf(found).toEqualTypeOf<{
     count: number;
     performers: {
@@ -23,54 +26,59 @@ async function resultTypes(stash: StashClient) {
     }[];
   }>();
 
+  // Arguments can be left out when none is required; nullable objects stay nullable.
+  const version = await stash.version((v) => ({ version: v.version }));
+  expectTypeOf(version).toEqualTypeOf<{ version: string | null }>();
+  const scene = await stash.findScene({ id: "1" }, (s) => ({ title: s.title }));
+  expectTypeOf(scene).toEqualTypeOf<{ title: string | null } | null>();
+
   // Scalar root fields take no selection.
   expectTypeOf(await stash.performerDestroy({ input: { id: "1" } })).toEqualTypeOf<boolean>();
-
-  const totals = await stash.batch({
-    scenes: operation("findScenes", undefined, { count: true }),
-    images: operation("findImages", undefined, { count: true }),
-  });
-  expectTypeOf(totals).toEqualTypeOf<{ scenes: { count: number }; images: { count: number } }>();
 }
 
 async function aliasTypes(stash: StashClient) {
-  // The same field twice with different arguments.
-  const { groups } = await stash.findGroups(undefined, {
-    groups: {
-      id: true,
-      $as: {
-        direct: { scene_count: { $args: { depth: 0 } } },
-        all: { scene_count: { $args: { depth: -1 } } },
-      },
-    },
-  });
-  expectTypeOf(groups).toEqualTypeOf<{ id: string; direct: number; all: number }[]>();
+  // Result keys are aliases, so the same field can be selected with different arguments.
+  const { groups } = await stash.findGroups((result) => ({
+    groups: result.groups((group) => ({
+      id: group.id,
+      rating: group.rating100,
+      direct: group.scene_count({ depth: 0 }),
+      all: group.scene_count({ depth: -1 }),
+      count: group.scene_count,
+    })),
+  }));
+  expectTypeOf(groups).toEqualTypeOf<
+    { id: string; rating: number | null; direct: number; all: number; count: number }[]
+  >();
 
-  // Aliased object fields keep their sub-selection.
-  const image = await stash.findImage(
-    { id: "1" },
-    { $as: { owner: { studio: { id: true, name: true } } } },
-  );
-  expectTypeOf(image).toEqualTypeOf<{ owner: { id: string; name: string } | null } | null>();
+  const totals = await stash.query((query) => ({
+    scenes: query.findScenes((result) => ({ count: result.count })),
+    favorites: query.findScenes({ scene_filter: { performer_favorite: true } }, (result) => ({
+      count: result.count,
+    })),
+    version: query.version((v) => ({ version: v.version })),
+  }));
+  expectTypeOf(totals).toEqualTypeOf<{
+    scenes: { count: number };
+    favorites: { count: number };
+    version: { version: string | null };
+  }>();
 
-  // @ts-expect-error aliases must point at an existing field
-  await stash.findGroups(undefined, { groups: { $as: { x: { nope: true } } } });
-  await stash.findGroups(undefined, {
-    // @ts-expect-error alias arguments are checked against the field they select
-    groups: { $as: { x: { scene_count: { $args: { depth: "all" } } } } },
-  });
+  const updated = await stash.mutation((mutation) => ({
+    first: mutation.performerUpdate({ input: { id: "1" } }, (performer) => ({ id: performer.id })),
+    removed: mutation.performerDestroy({ input: { id: "2" } }),
+  }));
+  expectTypeOf(updated).toEqualTypeOf<{ first: { id: string } | null; removed: boolean }>();
 }
 
 async function unionTypes(stash: StashClient) {
-  const { files } = await stash.findFiles(undefined, {
-    files: {
-      path: true,
-      $on: {
-        ImageFile: { width: true, height: true },
-        VideoFile: { width: true, height: true, duration: true },
-      },
-    },
-  });
+  const { files } = await stash.findFiles((result) => ({
+    files: result.files((file) => ({
+      path: file.path,
+      ...file.$on("ImageFile", (image) => ({ width: image.width, height: image.height })),
+      ...file.$on("VideoFile", (video) => ({ width: video.width, duration: video.duration })),
+    })),
+  }));
   for (const file of files) {
     expectTypeOf(file.path).toBeString();
     if (file.__typename === "VideoFile") expectTypeOf(file.duration).toBeNumber();
@@ -80,48 +88,69 @@ async function unionTypes(stash: StashClient) {
   }
 }
 
-async function operationTypes(runner: StashRunner) {
-  // Operations built with the generated builders and with operation() infer the same results.
-  const built = await runner.run(findScenes(undefined, { count: true }));
-  expectTypeOf(built).toEqualTypeOf<{ count: number }>();
-  const generic = await runner.run(operation("findScenes", undefined, { count: true }));
-  expectTypeOf(generic).toEqualTypeOf<{ count: number }>();
+const tagFields = (tag: Fields<"Tag">) => ({ id: tag.id, name: tag.name });
+const performerCard = (performer: Fields<"Performer">) => ({
+  id: performer.id,
+  name: performer.name,
+  tags: performer.tags(tagFields),
+});
+const fileFields = (file: Fields<"BaseFile">) => ({
+  path: file.path,
+  ...file.$on("VideoFile", (video) => ({ duration: video.duration })),
+});
 
-  expectTypeOf(await runner.run(performerDestroy({ input: { id: "1" } }))).toEqualTypeOf<boolean>();
-  expectTypeOf(
-    await runner.run(operation("performerDestroy", { input: { id: "1" } })),
-  ).toEqualTypeOf<boolean>();
-}
+const tagNames = ({ id, name }: Fields<"Tag">) => ({ id, name });
+const optionalTags = (performer: Fields<"Performer">, withTags: boolean) => ({
+  id: performer.id,
+  ...(withTags ? { tags: performer.tags(tagNames) } : {}),
+});
 
 function reusableSelections() {
-  const card = { id: true, name: true } as const satisfies Selection<"Performer">;
-  expectTypeOf<Result<"Performer", typeof card>>().toEqualTypeOf<{ id: string; name: string }>();
-  expectTypeOf<OperationResult<"findPerformers", { count: true }>>().toEqualTypeOf<{
-    count: number;
+  // Destructured fields keep their names, so the result keys equal the field names.
+  expectTypeOf<Result<typeof tagNames>>().toEqualTypeOf<{ id: string; name: string }>();
+  // A field selected conditionally is optional in the result.
+  expectTypeOf<Result<typeof optionalTags>>().toEqualTypeOf<{
+    id: string;
+    tags?: { id: string; name: string }[];
   }>();
 
-  const op = operation("findScenes", undefined, { count: true });
-  expectTypeOf<ResultOf<typeof op>>().toEqualTypeOf<{ count: number }>();
+  expectTypeOf<Result<typeof tagFields>>().toEqualTypeOf<{ id: string; name: string }>();
+  expectTypeOf<Result<typeof performerCard>>().toEqualTypeOf<{
+    id: string;
+    name: string;
+    tags: { id: string; name: string }[];
+  }>();
+  expectTypeOf<Result<typeof fileFields>>().toEqualTypeOf<
+    | { path: string; __typename: "BasicFile" }
+    | { path: string; __typename: "VideoFile"; duration: number }
+    | { path: string; __typename: "ImageFile" }
+    | { path: string; __typename: "GalleryFile" }
+  >();
 }
 
 async function invalidCalls(stash: StashClient) {
-  // @ts-expect-error unknown field
-  await stash.findPerformers(undefined, { performers: { nam: true } });
+  await stash.findPerformers((result) => ({
+    // @ts-expect-error unknown field
+    performers: result.performers((p) => ({ n: p.nam })),
+  }));
   // @ts-expect-error unknown enum value
-  await stash.findPerformers({ filter: { direction: "UP" } }, { count: true });
+  await stash.findPerformers({ filter: { direction: "UP" } }, (result) => ({ c: result.count }));
   // @ts-expect-error missing required argument
-  await stash.performerUpdate(undefined, { id: true });
+  await stash.performerUpdate((performer) => ({ id: performer.id }));
   // @ts-expect-error object root fields need a selection
   await stash.findScenes({});
+  // @ts-expect-error object fields need a nested selection
+  await stash.findScenes((result) => ({ scenes: result.scenes }));
+  await stash.findGroups((result) => ({
+    // @ts-expect-error nested arguments are checked
+    groups: result.groups((group) => ({ count: group.scene_count({ depth: "all" }) })),
+  }));
+  // @ts-expect-error $on only accepts members of the union
+  await stash.findFiles((result) => ({ files: result.files((f) => f.$on("Scene", (s) => s)) }));
+  // @ts-expect-error mutations can't be selected in a query
+  await stash.query((query) => ({ x: query.performerDestroy({ input: { id: "1" } }) }));
 }
 
 test("compile-time checks are part of `bun check`", () => {
-  expect([
-    resultTypes,
-    aliasTypes,
-    unionTypes,
-    operationTypes,
-    reusableSelections,
-    invalidCalls,
-  ]).toHaveLength(6);
+  expect([resultTypes, aliasTypes, unionTypes, reusableSelections, invalidCalls]).toHaveLength(5);
 });

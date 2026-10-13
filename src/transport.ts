@@ -1,5 +1,4 @@
-import { buildRequest, type GraphQLRequest, type RawOperation } from "./request.ts";
-import type { Operation, OperationResult, RequestField, SubscriptionField } from "./types.ts";
+import type { GraphQLRequest } from "./request.ts";
 
 /** A running subscription; `return()`, or leaving a `for await` loop, unsubscribes. */
 export interface Subscription<T> extends AsyncIterableIterator<T> {
@@ -45,28 +44,7 @@ export class StashError extends Error {
   }
 }
 
-export interface StashRunner {
-  /** Sends a query or mutation and returns the data of its root field. */
-  run<K extends RequestField, S>(operation: Operation<K, S>): Promise<OperationResult<K, S>>;
-  /** Sends several queries (or several mutations) in one request; keys become aliases. */
-  batch<const B extends Record<string, Operation<RequestField>>>(
-    operations: B,
-  ): Promise<{
-    -readonly [A in keyof B]: B[A] extends Operation<infer K, infer S>
-      ? OperationResult<K, S>
-      : never;
-  }>;
-  /** Streams a subscription; leaving the loop unsubscribes. */
-  subscribe<K extends SubscriptionField, S>(
-    operation: Operation<K, S>,
-  ): Subscription<OperationResult<K, S>>;
-  /** Sends any GraphQL document as is and returns the untyped `data`. */
-  request(query: string, variables?: Record<string, unknown>): Promise<Record<string, unknown>>;
-}
-
-type HttpOperation = RawOperation & { upload?: boolean | undefined };
-
-/** Untyped transport shared by `createRunner` and `createStash`. */
+/** Sends requests over HTTP and subscriptions over WebSocket; results are untyped here. */
 export function createTransport(options: StashOptions) {
   const headers = {
     ...(options.apiKey === undefined ? {} : { ApiKey: options.apiKey }),
@@ -99,19 +77,12 @@ export function createTransport(options: StashOptions) {
   };
 
   return {
-    run: async (operation: HttpOperation) =>
-      (await send(buildRequest([[undefined, operation]]), operation.upload))[operation.field],
-    batch: (operations: Record<string, HttpOperation>) =>
-      send(
-        buildRequest(Object.entries(operations)),
-        Object.values(operations).some((operation) => operation.upload === true),
-      ),
-    subscribe(operation: RawOperation): Subscription<unknown> {
+    send,
+    /** Streams the values of root field `field`. */
+    subscribe(request: GraphQLRequest, field: string): Subscription<unknown> {
       let source: Promise<AsyncIterableIterator<unknown>> | undefined;
       const open = () =>
-        (source ??= subscriptions().then((subscriber) =>
-          subscriber.iterate(buildRequest([[undefined, operation]])),
-        ));
+        (source ??= subscriptions().then((subscriber) => subscriber.iterate(request)));
       // Delegate instead of wrapping in an async generator: a generator only handles return()
       // at its next yield, so an idle subscription could never be stopped.
       return {
@@ -120,7 +91,7 @@ export function createTransport(options: StashOptions) {
           const result = await iterator.next();
           if (result.done === true) return result;
           try {
-            return { value: readData(result.value, 200, true)[operation.field], done: false };
+            return { value: readData(result.value, 200, true)[field], done: false };
           } catch (error) {
             await iterator.return?.();
             throw error;
@@ -140,13 +111,6 @@ export function createTransport(options: StashOptions) {
     request: (query: string, variables: Record<string, unknown> = {}) =>
       send({ query, variables }, true),
   };
-}
-
-/** A client without per-field methods; pair it with `stash-graphql-client/operations`. */
-export function createRunner(options: StashOptions): StashRunner {
-  const runner: object = createTransport(options);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- results are typed by the operations
-  return runner as StashRunner;
 }
 
 /** A WebSocket constructor that accepts headers for the upgrade request, as Bun and Node do. */

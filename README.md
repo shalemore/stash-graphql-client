@@ -2,9 +2,9 @@
 
 A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL API, without writing GraphQL.
 
-- **Pick fields with plain objects.** Only the selected fields are requested, and the result type contains exactly those fields with the nullability from the schema.
+- **Select fields by reading them.** A selection is a callback that picks fields from a typed object, so the editor completes field names and shows each field's type, docs and deprecation. Only the selected fields are requested, and the result type contains exactly those fields with the nullability from the schema.
 - **Everything comes from the schema.** Root fields, arguments, input types and enums are generated from Stash's own schema with the same names. There are no hand-written wrappers to fall behind upstream.
-- **No runtime dependencies.** It uses the platform `fetch`. Turning a selection into a request takes about 4 µs, roughly 10x faster than printing a GraphQL document.
+- **No runtime dependencies.** It uses the platform `fetch` and bundles to about 4.5 KB gzipped. Turning a selection into a request takes about 4.5 µs.
 - **Covers the whole API.** Queries, mutations, subscriptions (via [`graphql-ws`](https://github.com/enisdenjo/graphql-ws)) and file uploads are supported. `@defer` is the one thing left out: Stash declares it but ignores it and always answers with the complete result. Anything else can be sent as a plain GraphQL document.
 
 Generated from the official schema of the latest Stash release (exported as `STASH_VERSION`), with its field descriptions and deprecations as JSDoc.
@@ -25,80 +25,74 @@ const stash = createStash({
 
 const { count, performers } = await stash.findPerformers(
   { filter: { per_page: 20, sort: "name", direction: "ASC" } },
-  { count: true, performers: { id: true, name: true, favorite: true } },
+  (result) => ({
+    count: result.count,
+    performers: result.performers((performer) => ({
+      id: performer.id,
+      name: performer.name,
+      favorite: performer.favorite,
+    })),
+  }),
 );
 // count: number
 // performers: { id: string; name: string; favorite: boolean }[]
 ```
 
-Every root field of the schema is a method. Its first parameter is the arguments and its second is the selection. Mistakes are caught by the type checker:
+Every root field of the schema is a method. Its first parameter is the arguments, which can be left out when none is required, and its last is the selection. Mistakes are caught by the type checker:
 
 ```ts
-await stash.findPerformers(undefined, { performers: { nam: true } });
-//                                                    ~~~ unknown field
-await stash.findPerformers({ filter: { direction: "UP" } }, { count: true });
-//                                                ~~~~ not a SortDirectionEnum
+await stash.findPerformers((result) => ({ count: result.cont }));
+//                                                      ~~~~ unknown field
+await stash.findPerformers({ filter: { direction: "UP" } }, (result) => ({ count: result.count }));
+//                                     ~~~~~~~~~ not a SortDirectionEnum
 ```
 
 ## Selecting fields
 
-Use `true` for scalars and a nested object for object fields:
+The selection callback receives the fields of the returned object type. Read a scalar field to select it, and call an object field with a nested selection:
 
 ```ts
-const scene = await stash.findScene(
-  { id: "42" },
-  {
-    id: true,
-    title: true,
-    rating100: true,
-    studio: { id: true, name: true },
-    performers: { id: true, name: true },
-    files: { path: true, duration: true },
-  },
-);
+const scene = await stash.findScene({ id: "42" }, (found) => ({
+  id: found.id,
+  title: found.title,
+  rating100: found.rating100,
+  studio: found.studio((studio) => ({ id: studio.id, name: studio.name })),
+  files: found.files((file) => ({ path: file.path, duration: file.duration })),
+}));
 // scene: { id: string; title: string | null; rating100: number | null;
-//   studio: { id: string; name: string } | null; ... } | null
+//   studio: { id: string; name: string } | null; files: { ... }[] } | null
 ```
 
-### Arguments on nested fields
+### Names, aliases and arguments
 
-Fields that take arguments accept them through `$args`:
-
-```ts
-const { groups } = await stash.findGroups(undefined, {
-  groups: { id: true, name: true, scene_count: { $args: { depth: -1 } } },
-});
-```
-
-### Aliases
-
-Select the same field twice with different arguments by giving each one a name under `$as`. Each alias selects exactly one field:
+The keys of the returned object are the keys of the result, so renaming a field is just a different key. Fields with arguments are called with them, which also lets you select the same field twice:
 
 ```ts
-const { files } = await stash.findFiles(undefined, {
-  files: {
-    path: true,
-    $as: {
-      md5: { fingerprint: { $args: { type: "md5" } } },
-      phash: { fingerprint: { $args: { type: "phash" } } },
-    },
-  },
-});
-// files: { path: string; md5: string | null; phash: string | null }[]
+const { groups } = await stash.findGroups((result) => ({
+  groups: result.groups((group) => ({
+    id: group.id,
+    rating: group.rating100,
+    directScenes: group.scene_count({ depth: 0 }),
+    allScenes: group.scene_count({ depth: -1 }),
+  })),
+}));
+// groups: { id: string; rating: number | null; directScenes: number; allScenes: number }[]
 ```
 
 ### Unions and interfaces
 
-Select per member with `$on`. The result is narrowed by `__typename`:
+Spread `$on` into the selection to select fields of one member. `__typename` is requested automatically, and the result is narrowed by it:
 
 ```ts
-const image = await stash.findImage(
-  { id: "7" },
-  { visual_files: { $on: { ImageFile: { path: true, width: true, height: true } } } },
-);
+const image = await stash.findImage({ id: "7" }, (found) => ({
+  visual_files: found.visual_files((file) => ({
+    ...file.$on("ImageFile", (picture) => ({ path: picture.path, width: picture.width })),
+    ...file.$on("VideoFile", (video) => ({ path: video.path, duration: video.duration })),
+  })),
+}));
 
 for (const file of image?.visual_files ?? []) {
-  if (file.__typename === "ImageFile") console.log(file.width, file.height);
+  if (file.__typename === "ImageFile") console.log(file.width);
 }
 ```
 
@@ -114,62 +108,140 @@ const favorites: SceneFilterType = {
   rating100: { value: 80, modifier: "GREATER_THAN" satisfies CriterionModifier },
 };
 
-await stash.findScenes({ scene_filter: favorites }, { count: true });
+await stash.findScenes({ scene_filter: favorites }, (result) => ({ count: result.count }));
 ```
 
 ## Reusing selections and naming types
 
-A selection is a plain object, so share it like a fragment and derive its type with `Result`:
+A selection is a plain function, so share it like a fragment. Annotate its parameter with `Fields<"Type">` and derive its result with `Result`; both are types only, so nothing extra is imported at runtime:
 
 ```ts
-import type { Result, Selection } from "stash-graphql-client";
+import type { Fields, Result } from "stash-graphql-client";
 
-export const performerCard = {
-  id: true,
-  name: true,
-  image_path: true,
-  tags: { id: true, name: true },
-} as const satisfies Selection<"Performer">;
+const tagFields = ({ id, name }: Fields<"Tag">) => ({ id, name });
 
-export type PerformerCard = Result<"Performer", typeof performerCard>;
+export const performerCard = (performer: Fields<"Performer">) => ({
+  id: performer.id,
+  name: performer.name,
+  image: performer.image_path,
+  tags: performer.tags(tagFields),
+});
 
-const { performers } = await stash.findPerformers(undefined, { performers: performerCard });
+export type PerformerCard = Result<typeof performerCard>;
+// { id: string; name: string; image: string | null; tags: { id: string; name: string }[] }
+
+const { performers } = await stash.findPerformers((result) => ({
+  performers: result.performers(performerCard),
+}));
 // performers: PerformerCard[]
 ```
 
-| Type                                      | Meaning                                           |
-| ----------------------------------------- | ------------------------------------------------- |
-| `Selection<"Performer">`                  | What can be selected on an object type            |
-| `Result<"Performer", typeof s>`           | Result of selection `s` on an object type         |
-| `Args<"findScenes">`                      | Arguments of a root field                         |
-| `OperationResult<"findScenes", typeof s>` | Result of calling a root field with selection `s` |
-| `ResultOf<typeof op>`                     | Result of an operation created with `operation()` |
-| `SceneFilterType`, `GenderEnum` and so on | Every input type and enum of the schema           |
+| Type                                      | Meaning                                      |
+| ----------------------------------------- | -------------------------------------------- |
+| `Fields<"Performer">`                     | The fields a selection can pick on an object |
+| `Result<typeof select>`                   | The result of a selection callback           |
+| `Args<"findScenes">`                      | Arguments of a root field                    |
+| `SceneFilterType`, `GenderEnum` and so on | Every input type and enum of the schema      |
+
+## Writing selections
+
+A selection callback is ordinary TypeScript, so the usual tools work. These conventions keep selections short and their types readable.
+
+### Destructure when the keys stay the same
+
+Destructuring reads the fields, so it selects them. Use it in leaf selections whose result keys are the field names, and use the dotted form to rename a field:
+
+```ts
+const { count, groups } = await stash.findGroups((found) => ({
+  count: found.count,
+  groups: found.groups(({ id, name, rating100, tags }) => ({
+    id,
+    name,
+    rating: rating100,
+    tags: tags(tagFields),
+  })),
+}));
+```
+
+Use a named parameter where destructured names would shadow variables around it, as in the root callback above, whose result is destructured into the same names. With a `no-shadow` lint rule this matters for nested selections too: two levels that both destructure `id` and `name` shadow each other, so pass a shared selection such as `tagFields` instead.
+
+Destructure only the fields you select. A rest element (`({ id, ...rest })`) selects nothing, because the fields object has no own keys to copy.
+
+### Share selections as module-level functions
+
+Write a selection that is used more than once as a function at module level, typed with `Fields<"Type">` and named after the object type: `tagFields`, `performerCard`. Derive types from it with `Result` instead of declaring them by hand, so the type can never drift from what is requested:
+
+```ts
+const tagFields = ({ id, name }: Fields<"Tag">) => ({ id, name });
+
+export const sceneFields = (scene: Fields<"Scene">) => ({
+  id: scene.id,
+  title: scene.title,
+  tags: scene.tags(tagFields),
+  performers: scene.performers(({ id, name }) => ({ id, name })),
+});
+
+export type SceneItem = Result<typeof sceneFields>;
+```
+
+A selection that is used once stays inline in the call.
+
+### Compose and parameterize
+
+Pass a shared selection to an object field, or spread it to extend it. Extra parameters after the fields make a selection configurable; a field selected with a conditional spread is optional in the result:
+
+```ts
+const tagTree = (tag: Fields<"Tag">) => ({
+  ...tagFields(tag),
+  children: tag.children(tagFields),
+});
+
+const sceneCard = (scene: Fields<"Scene">, withFiles: boolean) => ({
+  ...sceneFields(scene),
+  ...(withFiles ? { files: scene.files(({ path, size }) => ({ path, size })) } : {}),
+});
+
+const { scenes } = await stash.findScenes((found) => ({
+  scenes: found.scenes((scene) => sceneCard(scene, true)),
+}));
+// scenes: { id: string; ...; files?: { path: string; size: number }[] }[]
+```
+
+### Keep callbacks synchronous and pure
+
+Selection callbacks run once, while the request is built, and only record what they read. Don't await in them or depend on side effects. Everything in the returned object must be a selected field, a nested selection or a `$on` spread; other values are a type error and are rejected before sending.
+
+### Pick the right request
+
+- One root field: call its method, `stash.findScenes(...)`.
+- Several root fields that belong together, such as the counts of a dashboard: `stash.query(...)`, which sends one request.
+- Independent requests: run the methods concurrently with `Promise.all`.
+- Mutations: select what the caller needs afterwards, typically the id and the fields it changed, so a cache can be updated without refetching.
 
 ## Several root fields in one request
 
-Describe each call with `operation()` and send them together. The keys become aliases:
+`query` selects any number of root fields. The keys become aliases, so the same root field can appear twice with different arguments:
 
 ```ts
-import { operation } from "stash-graphql-client";
+const totals = await stash.query((query) => ({
+  scenes: query.findScenes((result) => ({ count: result.count })),
+  favorites: query.findScenes({ scene_filter: { performer_favorite: true } }, (result) => ({
+    count: result.count,
+  })),
+  performers: query.findPerformers((result) => ({ count: result.count })),
+}));
 
-const totals = await stash.batch({
-  scenes: operation("findScenes", undefined, { count: true }),
-  images: operation("findImages", undefined, { count: true }),
-  performers: operation("findPerformers", undefined, { count: true }),
-});
-
-totals.scenes.count; // number
+totals.favorites.count; // number
 ```
 
-`batch` sends one HTTP request and one GraphQL document with all fields, so Stash answers once. It works for several queries or for several mutations. As the GraphQL spec requires, the fields of a mutation run one after another in the order you wrote them.
+This is one HTTP request and one GraphQL document, so Stash answers once. `mutation` works the same way for mutations, which the GraphQL spec runs one after another in the order you wrote them.
 
 Two limits:
 
 - A query and a mutation can't share a request in GraphQL. Await them separately.
 - Sending an array of separate operations in one HTTP request (batched HTTP) isn't part of the GraphQL spec, and Stash rejects it. Use `Promise.all` to run requests concurrently.
 
-If one field of a batch fails, the request throws a `StashError`; the fields that did succeed are on `error.data`.
+If one field fails, the request throws a `StashError`; the fields that did succeed are on `error.data`.
 
 ## Mutations and file uploads
 
@@ -178,7 +250,7 @@ Mutations work like queries. Mutations that return a scalar take no selection:
 ```ts
 const updated = await stash.performerUpdate(
   { input: { id: "3", favorite: true, rating100: 90 } },
-  { id: true, favorite: true, rating100: true },
+  (performer) => ({ id: performer.id, favorite: performer.favorite }),
 );
 
 const deleted: boolean = await stash.performerDestroy({ input: { id: "3" } });
@@ -201,10 +273,12 @@ const jobId = await stash.importObjects({
 Stash streams job updates, logs and scan completion over WebSocket. Subscription methods return async iterators, and leaving the loop unsubscribes:
 
 ```ts
-for await (const update of stash.jobsSubscribe(undefined, {
-  type: true,
-  job: { id: true, description: true, progress: true },
-})) {
+const jobs = stash.jobsSubscribe((update) => ({
+  type: update.type,
+  job: update.job((job) => ({ id: job.id, progress: job.progress })),
+}));
+
+for await (const update of jobs) {
   console.log(update.type, update.job.progress);
   if (update.type === "REMOVE") break;
 }
@@ -214,7 +288,7 @@ The protocol is handled by [`graphql-ws`](https://github.com/enisdenjo/graphql-w
 
 ## Any other GraphQL
 
-`request` sends a GraphQL document as is. Use it for anything the typed API doesn't model, such as fragments or directives. The result is untyped:
+`request` sends a GraphQL document as is. Use it for anything the typed API doesn't model, such as directives. The result is untyped:
 
 ```ts
 const data = await stash.request(`query ($id: ID!) { scene: findScene(id: $id) { id title } }`, {
@@ -222,24 +296,15 @@ const data = await stash.request(`query ($id: ID!) { scene: findScene(id: $id) {
 });
 ```
 
-To use another GraphQL client, `buildRequest` returns the standard `{ query, variables }` body for any operation:
-
-```ts
-import { buildRequest, operation } from "stash-graphql-client";
-
-const body = buildRequest([[undefined, operation("findScenes", undefined, { count: true })]]);
-// { query: "query{findScenes{count}}", variables: {} }
-```
-
 ## Errors
 
-Failed requests throw a `StashError` with the HTTP status and the GraphQL errors. GraphQL may return data next to errors; that partial `data` is available on the error. Stash validates arguments on the server, so a typo that slips past the type checker comes back as a readable error:
+Failed requests throw a `StashError` with the HTTP status and the GraphQL errors. GraphQL may return data next to errors; that partial `data` is available on the error. Stash validates arguments on the server, so a value that slips past the type checker comes back as a readable error:
 
 ```ts
 import { StashError } from "stash-graphql-client";
 
 try {
-  await stash.findScene({ id: "42" }, { id: true });
+  await stash.findScene({ id: "42" }, (found) => ({ id: found.id }));
 } catch (error) {
   if (error instanceof StashError) console.error(error.status, error.errors);
 }
@@ -256,20 +321,13 @@ createStash({
 });
 ```
 
-## Smaller bundles
+## How it works
 
-`createStash` carries the argument types of every root field, so it bundles to about 4.5 KB gzipped (plus a lazily loaded 4 KB chunk for subscriptions that is only fetched when you subscribe). For the smallest browser bundles, import operations one by one from `stash-graphql-client/operations` and run them with `createRunner`; unused operations are tree-shaken away, and a single operation bundles to under 2 KB:
-
-```ts
-import { createRunner, findScenes } from "stash-graphql-client/operations";
-
-const stash = createRunner({ endpoint: "/graphql" });
-const { count } = await stash.run(findScenes(undefined, { count: true }));
-```
+The `fields` object passed to a selection callback is a small proxy that records which fields you read and call. It needs no schema at runtime: the types already guarantee that only existing fields are selected. The client only carries the GraphQL types of root field arguments, which it needs to declare variables. That is why selections, `Fields` and `Result` add nothing to your bundle.
 
 ## Example
 
-[`example/index.ts`](example/index.ts) is a small script that uses the library like any project would: batching, filters, reusable selections, file dimensions through `$on`, errors and subscriptions. Run it with `STASH_URL=http://localhost:9999 STASH_API_KEY=... bun example/index.ts`.
+[`example/index.ts`](example/index.ts) is a small script that uses the library like any project would: several root fields in one request, filters, reusable selections, file dimensions through `$on`, errors and subscriptions. Run it with `STASH_URL=http://localhost:9999 STASH_API_KEY=... bun example/index.ts`.
 
 ## Development
 

@@ -1,8 +1,7 @@
 /**
  * Generates src/generated from schema/stash.graphql:
  * - schema.ts: enums, input types and output type descriptions, with the official docs (types only);
- * - roots.ts: kind and argument types of every root field, used by `createStash`;
- * - operations.ts: one tree-shakable builder per root field, each carrying its own metadata.
+ * - roots.ts: kind and argument types of every root field, used by `createStash`.
  */
 import {
   buildSchema,
@@ -22,9 +21,8 @@ import {
   isUnionType,
 } from "graphql";
 
-/** Client methods; a root field with the same name would be shadowed. */
-const RESERVED = new Set(["run", "batch", "subscribe", "request"]);
-const JS_RESERVED = new Set(["delete", "import", "export", "default", "new", "function", "class"]);
+/** A root field with the same name as a client method would be shadowed. */
+const CLIENT_METHODS = new Set(["query", "mutation", "request"]);
 
 /** JSON shape of Stash scalars. */
 const SCALARS: Record<string, string> = {
@@ -162,18 +160,14 @@ function hasUpload(type: GraphQLInputType, seen = new Set<string>()): boolean {
 }
 
 const roots: Record<string, [string, Record<string, string>, true?]> = {};
-const builders: string[] = [];
 for (const [kind, type] of ROOT_TYPES) {
   for (const value of Object.values(type?.getFields() ?? {})) {
-    if (RESERVED.has(value.name) || JS_RESERVED.has(value.name) || value.name in roots) {
-      throw new Error(`Root field ${value.name} clashes with a client method or reserved word`);
+    if (CLIENT_METHODS.has(value.name) || value.name in roots) {
+      throw new Error(`Root field ${value.name} clashes with a client method`);
     }
     const types = Object.fromEntries(value.args.map((arg) => [arg.name, String(arg.type)]));
     const upload = value.args.some((arg) => hasUpload(arg.type));
     roots[value.name] = upload ? [kind, types, true] : [kind, types];
-    builders.push(
-      `${doc(value, "")}export const ${value.name} = /* @__PURE__ */ define("${value.name}", "${kind}", ${JSON.stringify(types)}${upload ? ", true" : ""});`,
-    );
   }
 }
 
@@ -191,9 +185,5 @@ await Bun.write(
   "src/generated/roots.ts",
   `${header}export const STASH_VERSION = ${JSON.stringify(version)};\n\n` +
     `export const ROOTS: Record<string, ["query" | "mutation" | "subscription", Record<string, string>, true?]> = ${JSON.stringify(roots)};\n`,
-);
-await Bun.write(
-  "src/generated/operations.ts",
-  `${header}import { define } from "../define.ts";\n\n${builders.join("\n\n")}\n`,
 );
 console.log(`Generated ${Object.keys(roots).length} root fields from Stash ${version}`);

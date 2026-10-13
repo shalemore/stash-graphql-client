@@ -1,19 +1,16 @@
-export { createStash, operation } from "./client.ts";
+export { createStash } from "./client.ts";
 export type { StashClient } from "./client.ts";
-export { createRunner, StashError } from "./runner.ts";
-export type { StashOptions, StashRunner, Subscription, SubscriptionClient } from "./runner.ts";
-export { buildRequest } from "./request.ts";
+export { StashError } from "./transport.ts";
+export type { StashOptions, Subscription, SubscriptionClient } from "./transport.ts";
 export type { GraphQLRequest } from "./request.ts";
 export type {
   Args,
+  Field,
+  Fields,
+  Fragment,
   ObjectName,
-  Operation,
-  OperationResult,
-  RequestField,
   Result,
-  ResultOf,
   RootField,
-  RootSelection,
   Selection,
   SubscriptionField,
 } from "./types.ts";

@@ -4,7 +4,7 @@ import { createClient } from "graphql-ws";
 
 import { createStash } from "./client.ts";
 import type { GraphQLRequest } from "./request.ts";
-import { StashError, type SubscriptionClient } from "./runner.ts";
+import { StashError, type SubscriptionClient } from "./transport.ts";
 
 test("a graphql-ws client can be passed as is", () => {
   const client: SubscriptionClient = createClient({ url: "ws://stash.test/graphql", lazy: true });
@@ -28,7 +28,11 @@ test("streams subscription results and stops when the loop ends", async () => {
   const stash = createStash({ endpoint: "http://stash.test/graphql", subscriptions });
 
   const types: string[] = [];
-  for await (const update of stash.jobsSubscribe(undefined, { type: true, job: { id: true } })) {
+  const jobs = stash.jobsSubscribe((update) => ({
+    type: update.type,
+    job: update.job((job) => ({ id: job.id })),
+  }));
+  for await (const update of jobs) {
     types.push(update.type);
     break;
   }
@@ -106,7 +110,7 @@ test("ordinary requests stay JSON", async () => {
       return Response.json({ data: { findScenes: { count: 1 } } });
     },
   });
-  await stash.findScenes(undefined, { count: true });
+  await stash.findScenes((found) => ({ count: found.count }));
   expect(contentType).toBe("application/json");
 });
 
@@ -136,7 +140,7 @@ test("keeps the partial data of a response that also has errors", async () => {
       Response.json({ data: { findScenes: { count: 3 } }, errors: [{ message: "partial" }] }),
   });
   const error = await stash
-    .findScenes(undefined, { count: true })
+    .findScenes((found) => ({ count: found.count }))
     .catch((caught: unknown) => caught);
   expect(error).toBeInstanceOf(StashError);
   expect(error instanceof StashError && error.data).toEqual({ findScenes: { count: 3 } });

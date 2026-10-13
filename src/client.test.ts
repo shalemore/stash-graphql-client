@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import { createStash, operation } from "./client.ts";
-import { StashError } from "./runner.ts";
+import { createStash } from "./client.ts";
+import { StashError } from "./transport.ts";
 
 function fakeStash(body: unknown, status = 200) {
   const requests: { url: string; init: RequestInit }[] = [];
@@ -21,10 +21,14 @@ test("calls a root field with the API key and returns its data", async () => {
   const { stash, requests } = fakeStash({
     data: { findPerformers: { count: 1, performers: [{ id: "1", name: "A", rating100: null }] } },
   });
-  const result = await stash.findPerformers(
-    { filter: { per_page: 1 } },
-    { count: true, performers: { id: true, name: true, rating100: true } },
-  );
+  const result = await stash.findPerformers({ filter: { per_page: 1 } }, (found) => ({
+    count: found.count,
+    performers: found.performers((performer) => ({
+      id: performer.id,
+      name: performer.name,
+      rating100: performer.rating100,
+    })),
+  }));
 
   expect(result).toEqual({ count: 1, performers: [{ id: "1", name: "A", rating100: null }] });
   expect(requests).toHaveLength(1);
@@ -36,23 +40,23 @@ test("calls a root field with the API key and returns its data", async () => {
 
 test("throws StashError for GraphQL errors and HTTP failures", async () => {
   const graphqlError = fakeStash({ errors: [{ message: "boom" }], data: null });
-  const failure = graphqlError.stash.findScenes(undefined, { count: true });
+  const failure = graphqlError.stash.findScenes((found) => ({ count: found.count }));
   expect(failure).rejects.toThrow(StashError);
   expect(failure).rejects.toThrow("boom");
 
   const httpError = fakeStash("unauthorized", 401);
   const error = await httpError.stash
-    .findScenes(undefined, { count: true })
+    .findScenes((found) => ({ count: found.count }))
     .catch((e: unknown) => e);
   expect(error).toMatchObject({ status: 401 });
 });
 
-test("returns batched results by alias", async () => {
+test("returns the results of several root fields by key", async () => {
   const { stash } = fakeStash({ data: { performers: { count: 2 }, scenes: { count: 3 } } });
-  const counts = await stash.batch({
-    performers: operation("findPerformers", undefined, { count: true }),
-    scenes: operation("findScenes", undefined, { count: true }),
-  });
+  const counts = await stash.query((query) => ({
+    performers: query.findPerformers((found) => ({ count: found.count })),
+    scenes: query.findScenes((found) => ({ count: found.count })),
+  }));
   expect(counts).toEqual({ performers: { count: 2 }, scenes: { count: 3 } });
 });
 
@@ -68,8 +72,12 @@ test("returns union members as the server sent them", async () => {
       },
     },
   });
-  const { files } = await stash.findFiles(undefined, {
-    files: { path: true, $on: { ImageFile: { width: true }, VideoFile: { duration: true } } },
-  });
+  const { files } = await stash.findFiles((found) => ({
+    files: found.files((file) => ({
+      path: file.path,
+      ...file.$on("ImageFile", (image) => ({ width: image.width })),
+      ...file.$on("VideoFile", (video) => ({ duration: video.duration })),
+    })),
+  }));
   expect(files.map((file) => file.__typename)).toEqual(["ImageFile", "VideoFile", "GalleryFile"]);
 });

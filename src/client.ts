@@ -1,65 +1,52 @@
 import { ROOTS } from "./generated/roots.ts";
-import {
-  createTransport,
-  type StashOptions,
-  type StashRunner,
-  type Subscription,
-} from "./runner.ts";
-import type {
-  ArgsInput,
-  CallInput,
-  Root,
-  Operation,
-  OperationResult,
-  RootField,
-  RootSelection,
-  ScalarField,
-  SubscriptionField,
-} from "./types.ts";
+import { buildRequest, field, fields, type OperationKind } from "./request.ts";
+import { createTransport, type StashOptions } from "./transport.ts";
+import type { Fields, Output, RootMethods, Selection } from "./types.ts";
 
-type RootMethods = {
-  [K in keyof Root]: <const S extends RootSelection<K>>(
-    ...input: CallInput<K, S>
-  ) => K extends SubscriptionField
-    ? Subscription<OperationResult<K, S>>
-    : Promise<OperationResult<K, S>>;
-};
-
-/** A client with one method per root field, plus `run`, `batch`, `subscribe` and `request`. */
-export interface StashClient extends RootMethods, StashRunner {}
-
-/**
- * Describes a root field call without sending it, for `stash.batch` or `stash.run`.
- * The selection is its own parameter so that its type can be inferred.
- */
-export function operation<K extends ScalarField>(
-  field: K,
-  args: ArgsInput<K>,
-): Operation<K, undefined>;
-export function operation<K extends RootField, const S extends RootSelection<K>>(
-  field: K,
-  args: ArgsInput<K>,
-  select: S,
-): Operation<K, S>;
-export function operation(field: RootField, args: object | undefined, select?: unknown) {
-  const root = ROOTS[field];
-  if (root === undefined) throw new Error(`Unknown root field: ${field}`);
-  const [kind, types, upload] = root;
-  return { field, kind, types, args, select, ...(upload ? { upload } : {}) };
+/** A client with one method per root field, plus `query`, `mutation` and `request`. */
+export interface StashClient extends RootMethods {
+  /**
+   * Sends several queries in one request. The keys become the result keys, so the same root
+   * field can be selected twice with different arguments.
+   */
+  query<S extends Selection>(select: (query: Fields<"Query">) => S): Promise<Output<"Query", S>>;
+  /** Sends several mutations in one request; Stash runs them in order. */
+  mutation<S extends Selection>(
+    select: (mutation: Fields<"Mutation">) => S,
+  ): Promise<Output<"Mutation", S>>;
+  /** Sends any GraphQL document as is and returns the untyped `data`. */
+  request(query: string, variables?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 export function createStash(options: StashOptions): StashClient {
   const transport = createTransport(options);
+  // Async, so that errors in selection callbacks reject instead of throwing.
+  const send = async (kind: OperationKind, select: () => unknown) => {
+    const { request, upload } = buildRequest(kind, select());
+    return transport.send(request, upload);
+  };
+  const operation = (kind: OperationKind) => (select: (fields: unknown) => unknown) =>
+    send(kind, () => select(fields));
+
   const methods = Object.fromEntries(
-    Object.entries(ROOTS).map(([field, [kind, types, upload]]) => [
-      field,
-      (args?: object, select?: unknown) => {
-        const call = { field, kind, types, args, select, upload };
-        return kind === "subscription" ? transport.subscribe(call) : transport.run(call);
-      },
-    ]),
+    Object.entries(ROOTS).map(([name, [kind]]) => {
+      const root = (args: unknown, select: unknown) => ({ [name]: field(name)(args, select) });
+      return [
+        name,
+        kind === "subscription"
+          ? (args?: unknown, select?: unknown) =>
+              transport.subscribe(buildRequest(kind, root(args, select)).request, name)
+          : async (args?: unknown, select?: unknown) =>
+              (await send(kind, () => root(args, select)))[name],
+      ];
+    }),
   );
-  const client: object = { ...methods, ...transport };
+  const client: object = {
+    ...methods,
+    query: operation("query"),
+    mutation: operation("mutation"),
+    request: transport.request,
+  };
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one method per entry in ROOTS
   return client as StashClient;
 }
