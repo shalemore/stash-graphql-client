@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import { withStashVersion } from "./readme-version.ts";
+
 const dir = new URL("../.readme/", import.meta.url);
 const importCreateStash = `import { createStash } from "stash-graphql-client";\n`;
 const declareStash = `const stash = createStash({ endpoint: "http://localhost:9999/graphql" });\n`;
@@ -22,6 +24,14 @@ function withPrelude(code: string) {
   const needsStash = /\bstash\./.test(code) && !/\bconst stash\b/.test(code);
   return `${needsImport ? importCreateStash : ""}${needsStash ? declareStash : ""}${code}`;
 }
+
+test("the published README names the Stash release, the one in the repository doesn't", async () => {
+  const readme = await Bun.file(new URL("../README.md", import.meta.url)).text();
+  expect(readme).not.toContain("This version of the package is generated");
+  expect(withStashVersion(readme, "v0.31.1")).toContain(
+    "generated from the GraphQL schema of [Stash v0.31.1](https://github.com/stashapp/stash/releases/tag/v0.31.1)",
+  );
+});
 
 test("the TypeScript examples in the README type-check", async () => {
   const readme = await Bun.file(new URL("../README.md", import.meta.url)).text();

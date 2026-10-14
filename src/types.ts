@@ -120,6 +120,7 @@ type On<Name extends keyof Abstract> = <M extends Abstract[Name] & ObjectName, S
 /**
  * The fields of object type `Name`, passed to selection callbacks. Reading a field selects it;
  * fields with arguments are called with them, and object fields with a nested selection.
+ * Don't use `...rest` on it: the object is empty at runtime, so a rest element selects nothing.
  */
 export type Fields<Name extends ObjectName> = {
   readonly [K in keyof Objects[Name]]: FieldOf<Objects[Name][K]>;

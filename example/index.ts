@@ -3,7 +3,7 @@
  *
  *   STASH_URL=http://localhost:9999 STASH_API_KEY=... bun example/index.ts
  *
- * In your own project, install it with `bun add stash-graphql-client`; the imports stay the same.
+ * In your own project, install it with `npm install stash-graphql-client`; the imports stay the same.
  */
 import {
   createStash,

@@ -80,6 +80,10 @@ jobs:
           git diff --cached --quiet || git commit -m "chore(release): ${{ needs.plan.outputs.version }} from Stash ${{ needs.plan.outputs.stash }}"
           git push origin HEAD:main
 
+      # Done after the commit, so only the README that npm shows names the Stash version.
+      - name: Name the Stash version in the README
+        run: bun scripts/readme-version.ts
+
       # Trusted publishing: npm trusts this workflow through GitHub's short-lived identity token,
       # so no npm token is stored. It needs npm 11.5.1 or newer, which the runner image may lack.
       - name: Publish to npm

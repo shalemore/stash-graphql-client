@@ -1,13 +1,17 @@
 # stash-graphql-client
 
+[![npm](https://img.shields.io/npm/v/stash-graphql-client)](https://www.npmjs.com/package/stash-graphql-client)
+[![CI](https://github.com/shalemore/stash-graphql-client/actions/workflows/ci.yml/badge.svg)](https://github.com/shalemore/stash-graphql-client/actions/workflows/ci.yml)
+[![License](https://img.shields.io/npm/l/stash-graphql-client)](LICENSE)
+
 A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL API, without writing GraphQL.
 
-- **Pick fields by reading them.** Your editor autocompletes them, and the result type has exactly the fields you picked.
-- **Generated from Stash's own schema** (latest release, see `STASH_VERSION`), so the names match.
-- **No dependencies.** It just uses `fetch`, and is about 4.5 KB gzipped.
+- **Typed field selection.** Fields are selected with callbacks, and the result type contains exactly the selected fields.
+- **Generated from Stash's own schema** (the latest release, see [Stash versions](#stash-versions)), so the names match.
+- **Small.** Built on `fetch`, about 6 KB gzipped. The only dependency, `graphql-ws`, is loaded on the first subscription.
 
 ```sh
-bun add stash-graphql-client
+npm install stash-graphql-client
 ```
 
 ## Quick start
@@ -17,7 +21,7 @@ import { createStash } from "stash-graphql-client";
 
 const stash = createStash({
   endpoint: "http://localhost:9999/graphql",
-  apiKey: process.env.STASH_API_KEY, // sent as the ApiKey header
+  apiKey: process.env.STASH_API_KEY,
 });
 
 // Every root field is a method: (arguments, what to select)
@@ -39,24 +43,17 @@ await stash.findPerformers((result) => ({ count: result.cont }));
 //                                                      ~~~~ unknown field
 ```
 
-## Good to know
-
-- **Looking for a field or argument?** Everything is typed, with the schema's docs as JSDoc. In the installed package, see `dist/generated/schema.d.ts` for object and input types and `dist/generated/roots.d.ts` for the root fields.
-- **Read scalars, call objects.** `found.title` selects a scalar; `found.studio(...)` selects an object with a nested selection.
-- **Return only selections.** The returned object may contain just selected fields, nested selections and `$on` spreads. Compute things after the request, not inside the callback.
-- **Reach for plain GraphQL last.** Use `stash.request` only for something the typed API can't express.
-
 ## Selecting fields
 
 ```ts
 const scene = await stash.findScene({ id: "42" }, (found) => ({
   id: found.id,
-  title: found.title, // string | null, same as in the schema
-  studio: found.studio((studio) => ({ id: studio.id, name: studio.name })), // call it to pick nested fields
+  title: found.title, // a scalar: just read it (string | null, same as in the schema)
+  studio: found.studio((studio) => ({ id: studio.id, name: studio.name })), // an object: call it with its own selection
 }));
 ```
 
-Want a different name? Just use a different key. Fields with arguments can even be picked twice:
+Use a different key to rename a field. A field with arguments can be selected more than once under different keys:
 
 ```ts
 const { groups } = await stash.findGroups((result) => ({
@@ -69,7 +66,7 @@ const { groups } = await stash.findGroups((result) => ({
 }));
 ```
 
-For unions and interfaces, use `$on` to pick fields of one type. `__typename` is added for you, so you can narrow on it:
+For unions and interfaces, use `$on` to pick fields of one type. `__typename` is added automatically, so the result can be narrowed on it:
 
 ```ts
 const image = await stash.findImage({ id: "7" }, (found) => ({
@@ -99,7 +96,7 @@ await stash.findScenes({ scene_filter: favorites }, (result) => ({ count: result
 
 ## Reusing selections
 
-A selection is just a function, so you can share it like a fragment. `Fields` and `Result` are only types, so they cost nothing at runtime:
+A selection is a plain function, so it can be shared like a GraphQL fragment. `Fields` and `Result` are types only and have no runtime cost:
 
 ```ts
 import type { Args, Fields, Result } from "stash-graphql-client";
@@ -116,17 +113,25 @@ export const performerCard = (performer: Fields<"Performer">) => ({
 export type PerformerCard = Result<typeof performerCard>;
 // { id: string; name: string; image: string | null; tags: { id: string; name: string }[] }
 
-type ScenesArgs = Args<"findScenes">;
-
 // Add parameters to make it configurable
 const sceneCard = (scene: Fields<"Scene">, withFiles: boolean) => ({
   id: scene.id,
   tags: scene.tags(tagFields),
   ...(withFiles ? { files: scene.files(({ path, size }) => ({ path, size })) } : {}), // files?: ...
 });
+
+// Args is the argument type of a root field, handy for wrapping a call in your own function
+const listScenes = (args: Args<"findScenes">) =>
+  stash.findScenes(args, (result) => ({
+    count: result.count,
+    scenes: result.scenes((scene) => sceneCard(scene, false)),
+  }));
 ```
 
-Callbacks run once, just to build the request, so don't `await` or do side effects in them. Destructuring the parameter picks those fields, but `...rest` picks nothing.
+Callbacks run once, only to build the request. They must return only fields, nested selections and `$on` spreads. Don't `await` or compute anything inside them; do that with the result instead.
+
+> [!WARNING]
+> Don't use `...rest` on the callback parameter. It is always empty, so nothing is selected.
 
 ## Several root fields in one request
 
@@ -142,11 +147,13 @@ const totals = await stash.query((query) => ({
 totals.favorites.count; // number
 ```
 
-That's a single HTTP request, and the keys become aliases. `mutation` works the same way and runs in the order you wrote. A query and a mutation can't share a request, and Stash doesn't accept batched HTTP, so use `Promise.all` to run them side by side.
+This sends a single HTTP request, and the keys become aliases. `mutation` works the same way and runs the fields in the order written. A query and a mutation can't share a request, and Stash doesn't accept batched HTTP, so use `Promise.all` to run them concurrently.
 
 ## Mutations and file uploads
 
 ```ts
+import { openAsBlob } from "node:fs";
+
 const updated = await stash.performerUpdate(
   { input: { id: "3", favorite: true, rating100: 90 } },
   (performer) => ({ id: performer.id, favorite: performer.favorite }),
@@ -155,10 +162,10 @@ const updated = await stash.performerUpdate(
 // Returns a plain boolean, so there's nothing to select
 const deleted: boolean = await stash.performerDestroy({ input: { id: "3" } });
 
-// Pass a Blob or File for uploads
+// Pass a Blob or File for uploads: openAsBlob on Node, Bun.file on Bun, or a file input in the browser
 const jobId = await stash.importObjects({
   input: {
-    file: Bun.file("export.zip"),
+    file: await openAsBlob("export.zip"),
     duplicateBehaviour: "IGNORE",
     missingRefBehaviour: "IGNORE",
   },
@@ -180,13 +187,31 @@ for await (const update of jobs) {
 }
 ```
 
+Subscriptions go over a WebSocket through [`graphql-ws`](https://github.com/enisdenjo/graphql-ws). The client is created on the first subscription, at the same address as `endpoint` (`http` becomes `ws`, `https` becomes `wss`).
+
+- **Authentication.** On Node.js and Bun, `apiKey` and `headers` are sent with the WebSocket handshake too. Browsers can't set headers on a WebSocket, so there Stash has to recognize the session cookie.
+- **Needs a `WebSocket`.** That is global in browsers, on Node.js 22+ and on Bun. On older versions, or to configure reconnecting, pass your own `graphql-ws` client. A custom client must also handle authentication.
+
+```ts
+import { createClient } from "graphql-ws";
+
+const stash = createStash({
+  endpoint: "http://localhost:9999/graphql",
+  subscriptions: createClient({
+    url: "ws://localhost:9999/graphql",
+    webSocketImpl: WebSocket, // e.g. the `ws` package on older Node.js
+    retryAttempts: Infinity,
+  }),
+});
+```
+
 ## Raw GraphQL and errors
 
 ```ts
 import { StashError } from "stash-graphql-client";
 
 try {
-  // Send any GraphQL you like; the result is untyped
+  // For what the typed API can't express; the result is untyped
   await stash.request(`query ($id: ID!) { scene: findScene(id: $id) { id title } }`, { id: "42" });
 } catch (error) {
   // If part of the request worked, that data is in error.data
@@ -202,25 +227,14 @@ createStash({
   apiKey: "...",
   headers: { "X-Proxy-Token": "..." }, // e.g. for a reverse proxy
   fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }), // or any fetch-like function
-  // subscriptions: your own graphql-ws client
+  // subscriptions: your own graphql-ws client, see Subscriptions
 });
 ```
 
-## Development
+## Stash versions
 
-There's a script you can run against your own server in [`example/index.ts`](example/index.ts): `STASH_URL=http://localhost:9999 STASH_API_KEY=... bun example/index.ts`.
+Package `0.31.x` tracks the Stash `v0.31` series; patch numbers are independent. `STASH_VERSION` is the Stash release the schema comes from.
 
-```sh
-bun install
-bun check          # type check
-bun run lint       # oxfmt and oxlint
-bun test           # also type-checks the examples in this README
-bun run build      # writes dist
-bun run schema     # update to the latest Stash release (or: bun run schema v0.30.0)
-```
+## License
 
-> [!NOTE]
-> `@defer` isn't supported. Stash declares it but ignores it and always sends the full result.
-
-> [!NOTE]
-> This project was written with AI, and it runs in my own projects day to day. If you hit a bug, please [open an issue](https://github.com/shalemore/stash-graphql-client/issues/new/choose).
+[MIT](LICENSE)
