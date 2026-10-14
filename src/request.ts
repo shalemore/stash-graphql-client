@@ -23,7 +23,16 @@ const nodes = new WeakMap<object, Node>();
  */
 export const fields: unknown = new Proxy(
   {},
-  { get: (_, key) => (typeof key !== "string" ? undefined : key === "$on" ? on : field(key)) },
+  {
+    get: (_, key) =>
+      typeof key !== "string"
+        ? undefined
+        : key === "$on"
+          ? on
+          : key === "$pick"
+            ? pick
+            : field(key),
+  },
 );
 
 /** Selects a field; also called by the client for root fields. */
@@ -34,6 +43,10 @@ export function field(name: string, args?: unknown, select?: unknown): FieldCall
       : field(name, first, isCallback(second) ? second(fields) : undefined);
   nodes.set(call, { kind: "field", name, args, select });
   return call;
+}
+
+function pick(...names: string[]) {
+  return Object.fromEntries(names.map((name) => [name, field(name)]));
 }
 
 function on(type: string, select: Callback) {

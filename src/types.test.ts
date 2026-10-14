@@ -71,6 +71,25 @@ async function aliasTypes(stash: StashClient) {
   expectTypeOf(updated).toEqualTypeOf<{ first: { id: string } | null; removed: boolean }>();
 }
 
+async function pickTypes(stash: StashClient) {
+  // $pick gives the same result as selecting the fields one by one, and can be spread or returned.
+  const scene = await stash.findScene({ id: "1" }, (s) => ({
+    ...s.$pick("id", "title"),
+    studio: s.studio((studio) => studio.$pick("name")),
+  }));
+  expectTypeOf(scene).toEqualTypeOf<{
+    id: string;
+    title: string | null;
+    studio: { name: string } | null;
+  } | null>();
+
+  // Fields with optional arguments can be picked without them.
+  const { groups } = await stash.findGroups((result) => ({
+    groups: result.groups((group) => group.$pick("id", "scene_count")),
+  }));
+  expectTypeOf(groups).toEqualTypeOf<{ id: string; scene_count: number }[]>();
+}
+
 async function unionTypes(stash: StashClient) {
   const { files } = await stash.findFiles((result) => ({
     files: result.files((file) => ({
@@ -100,6 +119,7 @@ const fileFields = (file: Fields<"BaseFile">) => ({
 });
 
 const tagNames = ({ id, name }: Fields<"Tag">) => ({ id, name });
+const tagPicked = (tag: Fields<"Tag">) => tag.$pick("id", "name");
 const optionalTags = (performer: Fields<"Performer">, withTags: boolean) => ({
   id: performer.id,
   ...(withTags ? { tags: performer.tags(tagNames) } : {}),
@@ -108,6 +128,7 @@ const optionalTags = (performer: Fields<"Performer">, withTags: boolean) => ({
 function reusableSelections() {
   // Destructured fields keep their names, so the result keys equal the field names.
   expectTypeOf<Result<typeof tagNames>>().toEqualTypeOf<{ id: string; name: string }>();
+  expectTypeOf<Result<typeof tagPicked>>().toEqualTypeOf<{ id: string; name: string }>();
   // A field selected conditionally is optional in the result.
   expectTypeOf<Result<typeof optionalTags>>().toEqualTypeOf<{
     id: string;
@@ -129,6 +150,10 @@ function reusableSelections() {
 }
 
 async function invalidCalls(stash: StashClient) {
+  // @ts-expect-error object fields can't be picked, they need a selection
+  await stash.findScene({ id: "1" }, (scene) => scene.$pick("studio"));
+  // @ts-expect-error unknown field
+  await stash.findScene({ id: "1" }, (scene) => scene.$pick("titel"));
   await stash.findPerformers((result) => ({
     // @ts-expect-error unknown field
     performers: result.performers((p) => ({ n: p.nam })),
@@ -152,5 +177,12 @@ async function invalidCalls(stash: StashClient) {
 }
 
 test("compile-time checks are part of `bun check`", () => {
-  expect([resultTypes, aliasTypes, unionTypes, reusableSelections, invalidCalls]).toHaveLength(5);
+  expect([
+    resultTypes,
+    aliasTypes,
+    pickTypes,
+    unionTypes,
+    reusableSelections,
+    invalidCalls,
+  ]).toHaveLength(6);
 });

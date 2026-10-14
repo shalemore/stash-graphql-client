@@ -28,28 +28,35 @@ const stash = createStash({
 const { count, performers } = await stash.findPerformers(
   { filter: { per_page: 20, sort: "name", direction: "ASC" } },
   (result) => ({
-    count: result.count,
-    performers: result.performers((performer) => ({
-      id: performer.id,
-      name: performer.name,
-      favorite: performer.favorite,
-    })),
+    ...result.$pick("count"),
+    performers: result.performers((performer) => performer.$pick("id", "name", "favorite")),
   }),
 );
 // count: number
 // performers: { id: string; name: string; favorite: boolean }[]
 
-await stash.findPerformers((result) => ({ count: result.cont }));
-//                                                      ~~~~ unknown field
+await stash.findPerformers((result) => result.$pick("cont"));
+//                                                  ~~~~~~ unknown field
 ```
 
 ## Selecting fields
 
+`$pick` selects scalar fields by name; an object field is called with its own selection:
+
+```ts
+const scene = await stash.findScene({ id: "42" }, (found) => ({
+  ...found.$pick("id", "title"), // title: string | null, same as in the schema
+  studio: found.studio((studio) => studio.$pick("id", "name")),
+}));
+```
+
+A scalar can also be read directly, which selects it under the same name:
+
 ```ts
 const scene = await stash.findScene({ id: "42" }, (found) => ({
   id: found.id,
-  title: found.title, // a scalar: just read it (string | null, same as in the schema)
-  studio: found.studio((studio) => ({ id: studio.id, name: studio.name })), // an object: call it with its own selection
+  title: found.title,
+  studio: found.studio((studio) => ({ id: studio.id, name: studio.name })),
 }));
 ```
 
@@ -58,7 +65,7 @@ Use a different key to rename a field. A field with arguments can be selected mo
 ```ts
 const { groups } = await stash.findGroups((result) => ({
   groups: result.groups((group) => ({
-    id: group.id,
+    ...group.$pick("id"),
     rating: group.rating100,
     directScenes: group.scene_count({ depth: 0 }),
     allScenes: group.scene_count({ depth: -1 }),
@@ -71,8 +78,8 @@ For unions and interfaces, use `$on` to pick fields of one type. `__typename` is
 ```ts
 const image = await stash.findImage({ id: "7" }, (found) => ({
   visual_files: found.visual_files((file) => ({
-    ...file.$on("ImageFile", (picture) => ({ path: picture.path, width: picture.width })),
-    ...file.$on("VideoFile", (video) => ({ path: video.path, duration: video.duration })),
+    ...file.$on("ImageFile", (picture) => picture.$pick("path", "width")),
+    ...file.$on("VideoFile", (video) => video.$pick("path", "duration")),
   })),
 }));
 
@@ -91,7 +98,7 @@ const favorites: SceneFilterType = {
   rating100: { value: 80, modifier: "GREATER_THAN" satisfies CriterionModifier },
 };
 
-await stash.findScenes({ scene_filter: favorites }, (result) => ({ count: result.count }));
+await stash.findScenes({ scene_filter: favorites }, (result) => result.$pick("count"));
 ```
 
 ## Reusing selections
@@ -101,11 +108,10 @@ A selection is a plain function, so it can be shared like a GraphQL fragment. `F
 ```ts
 import type { Args, Fields, Result } from "stash-graphql-client";
 
-const tagFields = ({ id, name }: Fields<"Tag">) => ({ id, name });
+const tagFields = (tag: Fields<"Tag">) => tag.$pick("id", "name");
 
 export const performerCard = (performer: Fields<"Performer">) => ({
-  id: performer.id,
-  name: performer.name,
+  ...performer.$pick("id", "name"),
   image: performer.image_path,
   tags: performer.tags(tagFields),
 });
@@ -115,15 +121,15 @@ export type PerformerCard = Result<typeof performerCard>;
 
 // Add parameters to make it configurable
 const sceneCard = (scene: Fields<"Scene">, withFiles: boolean) => ({
-  id: scene.id,
+  ...scene.$pick("id"),
   tags: scene.tags(tagFields),
-  ...(withFiles ? { files: scene.files(({ path, size }) => ({ path, size })) } : {}), // files?: ...
+  ...(withFiles ? { files: scene.files((file) => file.$pick("path", "size")) } : {}), // files?: ...
 });
 
 // Args is the argument type of a root field, handy for wrapping a call in your own function
 const listScenes = (args: Args<"findScenes">) =>
   stash.findScenes(args, (result) => ({
-    count: result.count,
+    ...result.$pick("count"),
     scenes: result.scenes((scene) => sceneCard(scene, false)),
   }));
 ```
@@ -137,11 +143,11 @@ Callbacks run once, only to build the request. They must return only fields, nes
 
 ```ts
 const totals = await stash.query((query) => ({
-  scenes: query.findScenes((result) => ({ count: result.count })),
-  favorites: query.findScenes({ scene_filter: { performer_favorite: true } }, (result) => ({
-    count: result.count,
-  })),
-  performers: query.findPerformers((result) => ({ count: result.count })),
+  scenes: query.findScenes((result) => result.$pick("count")),
+  favorites: query.findScenes({ scene_filter: { performer_favorite: true } }, (result) =>
+    result.$pick("count"),
+  ),
+  performers: query.findPerformers((result) => result.$pick("count")),
 }));
 
 totals.favorites.count; // number
@@ -156,7 +162,7 @@ import { openAsBlob } from "node:fs";
 
 const updated = await stash.performerUpdate(
   { input: { id: "3", favorite: true, rating100: 90 } },
-  (performer) => ({ id: performer.id, favorite: performer.favorite }),
+  (performer) => performer.$pick("id", "favorite"),
 );
 
 // Returns a plain boolean, so there's nothing to select
@@ -177,8 +183,8 @@ const jobId = await stash.importObjects({
 ```ts
 // Returns an async iterator; leaving the loop unsubscribes
 const jobs = stash.jobsSubscribe((update) => ({
-  type: update.type,
-  job: update.job((job) => ({ id: job.id, progress: job.progress })),
+  ...update.$pick("type"),
+  job: update.job((job) => job.$pick("id", "progress")),
 }));
 
 for await (const update of jobs) {

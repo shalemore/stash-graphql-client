@@ -52,6 +52,24 @@ test("requests only the selected fields and passes root arguments as variables",
   });
 });
 
+test("$pick requests exactly the named fields", async () => {
+  const picked = await sent((stash) =>
+    stash.findScene({ id: "1" }, (scene) => ({
+      ...scene.$pick("id", "title"),
+      studio: scene.studio((studio) => studio.$pick("id", "name")),
+    })),
+  );
+  const written = await sent((stash) =>
+    stash.findScene({ id: "1" }, (scene) => ({
+      id: scene.id,
+      title: scene.title,
+      studio: scene.studio((studio) => ({ id: studio.id, name: studio.name })),
+    })),
+  );
+  expect(picked).toEqual(written);
+  expect(picked.query).toContain("findScene(id:$id){id title studio{id name}}");
+});
+
 test("result keys that differ from the field name become aliases", async () => {
   const { query } = await sent((stash) =>
     stash.findGroups((result) => ({

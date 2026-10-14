@@ -117,6 +117,16 @@ type On<Name extends keyof Abstract> = <M extends Abstract[Name] & ObjectName, S
   select: Select<M, S>,
 ) => { [K in `... on ${M}`]: Fragment<Output<M, S>> };
 
+/** Fields that can be selected by name alone: scalars without required arguments. */
+type Pickable<Name extends ObjectName> = {
+  [K in keyof Objects[Name]]: FieldOf<Objects[Name][K]> extends Field<unknown> ? K : never;
+}[keyof Objects[Name]];
+
+/** Selects scalar fields by name. Spread the result into a selection, or return it as is. */
+type PickFields<Name extends ObjectName> = <K extends Pickable<Name>>(
+  ...names: K[]
+) => { [P in K]: FieldOf<Objects[Name][P]> };
+
 /**
  * The fields of object type `Name`, passed to selection callbacks. Reading a field selects it;
  * fields with arguments are called with them, and object fields with a nested selection.
@@ -127,6 +137,7 @@ export type Fields<Name extends ObjectName> = {
 } & {
   /** The name of the object type. */
   readonly __typename: Field<Name extends keyof Abstract ? Abstract[Name] : Name>;
+  readonly $pick: PickFields<Name>;
   /** Type-only: lets `Result` find the object type of a selection callback. */
   readonly [fieldsOf]?: Name;
 } & (Name extends keyof Abstract ? { readonly $on: On<Name> } : {});
