@@ -1,0 +1,70 @@
+name: Update
+
+# Opens a pull request when the latest Stash release changes the GraphQL schema. Merging it
+# publishes the new version, see release.yml. Most Stash releases don't touch the schema.
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+
+      - id: plan
+        run: bun scripts/update-plan.ts | tee -a "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # `schema` also regenerates the code. The pull request is created with the workflow token, so
+      # CI does not run on it; verifying here makes up for that.
+      - name: Update the schema
+        if: steps.plan.outputs.update == 'true'
+        run: |
+          bun run schema "$STASH"
+          bun pm version "$VERSION" --no-git-tag-version --allow-same-version
+          bun run verify
+        env:
+          STASH: ${{ steps.plan.outputs.stash }}
+          VERSION: ${{ steps.plan.outputs.version }}
+
+      - name: Open the pull request
+        if: steps.plan.outputs.update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C stash-update
+          git add -A
+          git commit -m "feat: update to Stash $STASH"
+          git push --force origin stash-update
+          title="feat: update to Stash $STASH"
+          body="Generated from the schema of [Stash $STASH](https://github.com/stashapp/stash/releases/tag/$STASH). Merging publishes $VERSION."
+          if [ "$(gh pr list --head stash-update --state open --json number --jq length)" = "0" ]; then
+            gh pr create --base main --head stash-update --title "$title" --body "$body"
+          else
+            gh pr edit stash-update --title "$title" --body "$body"
+          fi
+        env:
+          STASH: ${{ steps.plan.outputs.stash }}
+          VERSION: ${{ steps.plan.outputs.version }}
+
+      # GitHub disables scheduled workflows after 60 days without repository activity, and Stash
+      # releases are months apart. Re-enabling the workflow resets that timer.
+      - run: gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/update.yml/enable"

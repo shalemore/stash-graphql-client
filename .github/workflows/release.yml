@@ -1,51 +1,38 @@
 name: Release
 
-# Publishes a new npm version whenever Stash has a new release. The decision lives in
-# scripts/release-plan.ts so it can be tested and run locally.
+# Publishes the version in package.json when it is not on npm yet. Merging the update pull request
+# from update.yml releases it; to release your own changes, bump the version in the same commit.
 on:
-  schedule:
-    - cron: "23 4 * * *"
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      force:
-        description: Publish the next patch even though Stash has no new release
-        type: boolean
-        default: false
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  plan:
+  check:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
     outputs:
-      release: ${{ steps.plan.outputs.release }}
-      schema: ${{ steps.plan.outputs.schema }}
-      stash: ${{ steps.plan.outputs.stash }}
-      version: ${{ steps.plan.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+      version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-      - id: plan
-        run: bun scripts/release-plan.ts | tee -a "$GITHUB_OUTPUT"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          FORCE: ${{ inputs.force }}
-      # GitHub disables scheduled workflows after 60 days without repository activity, and Stash
-      # releases are months apart. Re-enabling the workflow resets that timer.
-      - run: gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/enable"
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - id: check
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if npm view "$name@$version" version > /dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
-  release:
-    needs: plan
-    if: needs.plan.outputs.release == 'true'
+  publish:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -56,33 +43,13 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-
-      # `schema` also regenerates the code; without a schema change nothing needs regenerating.
-      - name: Update the schema
-        if: needs.plan.outputs.schema == 'true'
-        run: bun run schema "${{ needs.plan.outputs.stash }}"
-
-      - name: Set the version
-        run: bun pm version "${{ needs.plan.outputs.version }}" --no-git-tag-version --allow-same-version
-
       - run: bun run verify
       - run: bun run build
       - name: Show the package contents
         run: bun pm pack --dry-run
 
-      # Commit before publishing: if publishing fails, the next run sees an unpublished version
-      # in package.json and publishes exactly that one instead of skipping or bumping it.
-      - name: Commit
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "chore(release): ${{ needs.plan.outputs.version }} from Stash ${{ needs.plan.outputs.stash }}"
-          git push origin HEAD:main
-
-      # Done after the commit, so only the README that npm shows names the Stash version.
-      - name: Name the Stash version in the README
-        run: bun scripts/readme-version.ts
+      # Only the README that npm shows names the Stash version; the one in the repository stays as is.
+      - run: bun scripts/readme-version.ts
 
       # Trusted publishing: npm trusts this workflow through GitHub's short-lived identity token,
       # so no npm token is stored. It needs npm 11.5.1 or newer, which the runner image may lack.
@@ -92,8 +59,7 @@ jobs:
           npm publish --provenance
 
       - name: Tag and create the GitHub release
-        run: gh release create "v$VERSION" --target "$(git rev-parse HEAD)" --title "$VERSION" --notes "$NOTES"
+        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.plan.outputs.version }}
-          NOTES: Generated from the schema of [Stash ${{ needs.plan.outputs.stash }}](https://github.com/stashapp/stash/releases/tag/${{ needs.plan.outputs.stash }}).
+          VERSION: ${{ needs.check.outputs.version }}
