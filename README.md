@@ -8,7 +8,7 @@ A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL 
 
 - **Typed field selection.** Fields are selected with callbacks, and the result type contains exactly the selected fields.
 - **Generated from Stash's own schema** (the latest release, see [Stash versions](#stash-versions)), so the names match.
-- **Small.** Built on `fetch`, about 6 KB gzipped. The only dependency, `graphql-ws`, is loaded on the first subscription.
+- **Lightweight.** Built on `fetch`. The only dependency, `graphql-ws`, is loaded on the first subscription.
 
 ```sh
 npm install stash-graphql-client
