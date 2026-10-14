@@ -1,6 +1,6 @@
 {
   "name": "stash-graphql-client",
-  "version": "0.31.1",
+  "version": "0.31.2",
   "description": "Fully typed client for the Stash GraphQL API, without writing GraphQL",
   "keywords": [
     "graphql",
