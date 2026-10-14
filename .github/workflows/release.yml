@@ -39,6 +39,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -58,8 +60,16 @@ jobs:
           npm install --global npm@latest
           npm publish --provenance
 
+      # The notes list the commits since the previous release; pull request notes would miss
+      # commits pushed straight to main.
       - name: Tag and create the GitHub release
-        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
+        run: |
+          previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          notes=$(git log ${previous:+"$previous..HEAD"} --no-merges --invert-grep --grep='^chore(release)' --pretty='- %s (%h)')
+          if [ -n "$previous" ]; then
+            notes="$notes"$'\n\n'"**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$previous...v$VERSION"
+          fi
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes "$notes"
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.check.outputs.version }}
