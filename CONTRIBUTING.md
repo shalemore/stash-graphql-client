@@ -3,7 +3,7 @@
 You need [Bun](https://bun.sh) to run the scripts and tests (the version is pinned in `package.json`).
 
 ```sh
-npm install
+bun install
 bun check          # type check
 bun run lint       # oxfmt and oxlint
 bun test           # also type-checks the examples in the README
