@@ -187,6 +187,24 @@ test("sends files as a GraphQL multipart request", async () => {
   expect(body.get("0")).toBeInstanceOf(Blob);
 });
 
+test("a request with files sends other values as they are", async () => {
+  let operations = "";
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    fetch: async (_url, init) => {
+      if (!(init.body instanceof FormData)) throw new Error("expected multipart");
+      operations = text(init.body.get("operations"));
+      return Response.json({ data: { importObjects: "job-1" } });
+    },
+  });
+  await stash.request("mutation($input:Map){importObjects(input:$input)}", {
+    input: { file: new Blob(["{}"]), when: new Date(0) },
+  });
+
+  // A `Date` is left alone, so it still becomes a timestamp instead of an empty object.
+  expect(operations).toContain('"when":"1970-01-01T00:00:00.000Z"');
+});
+
 test("ordinary requests stay JSON", async () => {
   let contentType: string | undefined;
   const stash = createStash({

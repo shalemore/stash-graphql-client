@@ -245,7 +245,7 @@ function multipart(query: string, variables: unknown, files: [string, Blob][]) {
 function hasFile(value: unknown): boolean {
   if (value instanceof Blob) return true;
   if (Array.isArray(value)) return value.some(hasFile);
-  if (isObject(value)) return Object.values(value).some(hasFile);
+  if (isPlainObject(value)) return Object.values(value).some(hasFile);
   return false;
 }
 
@@ -258,15 +258,20 @@ function extractFiles(value: unknown, path: string, files: [string, Blob][]): un
   if (Array.isArray(value)) {
     return value.map((item: unknown, index) => extractFiles(item, `${path}.${index}`, files));
   }
-  if (isObject(value)) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        extractFiles(item, `${path}.${key}`, files),
-      ]),
-    );
-  }
-  return value;
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, extractFiles(item, `${path}.${key}`, files)]),
+  );
+}
+
+/**
+ * A JSON object, which is walked and copied; a `Date` or another instance is sent as it is, since a
+ * copy would lose its prototype and its properties.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
