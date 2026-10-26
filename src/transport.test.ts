@@ -268,6 +268,25 @@ test("a root field with arguments reads arguments before options", async () => {
   expect(signals).toEqual([undefined, signal]);
 });
 
+test("a signal of another realm still reaches fetch", async () => {
+  const signals: unknown[] = [];
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    fetch: async (_url, init) => {
+      signals.push(init.signal);
+      return Response.json({ data: { version: { version: "v0.31.1" } } });
+    },
+  });
+  // A signal from an iframe is not an instance of this realm's AbortSignal, and fetch takes it.
+  const signal = { aborted: false, addEventListener() {}, removeEventListener() {} };
+  await stash.version(
+    (info) => ({ version: info.version }),
+    // @ts-expect-error only the shape of the signal matters here
+    { signal },
+  );
+  expect(signals).toEqual([signal]);
+});
+
 test("aborting rejects the request with the AbortError of fetch", async () => {
   const stash = createStash({ endpoint: "http://stash.test/graphql", fetch: pendingFetch });
   const controller = new AbortController();

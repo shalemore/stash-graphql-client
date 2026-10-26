@@ -96,5 +96,21 @@ function rootCall(rest: unknown[]): RootCall {
 /** The per-call options of a call, which the types allow to be left out. */
 function callOptions(value: unknown): RequestOptions | undefined {
   if (typeof value !== "object" || value === null || !("signal" in value)) return undefined;
-  return value.signal instanceof AbortSignal ? { signal: value.signal } : undefined;
+  const { signal } = value;
+  // Passed on as given, so an option added later reaches the transport without being listed here.
+  return isAbortSignal(signal) ? { ...value, signal } : undefined;
+}
+
+/**
+ * Whether `value` is an `AbortSignal`. `instanceof` rejects a signal created in another realm, such
+ * as an iframe, which `fetch` accepts all the same.
+ */
+function isAbortSignal(value: unknown): value is AbortSignal {
+  if (typeof value !== "object" || value === null) return false;
+  return (
+    "aborted" in value &&
+    typeof value.aborted === "boolean" &&
+    "addEventListener" in value &&
+    typeof value.addEventListener === "function"
+  );
 }
