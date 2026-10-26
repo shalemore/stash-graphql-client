@@ -35,9 +35,29 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - name: Import the built package
+      - name: Pack the package
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+      # Nothing leaves the runner: fetch is stubbed, and the endpoint is only a required option. The
+      # optional peer is not installed in the throwaway project either, so this also checks that a
+      # request needs neither graphql-ws nor a WebSocket, on the oldest supported runtimes.
+      - name: Install and use the packed package
         run: |
+          mkdir "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm init --yes > /dev/null
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/*.tgz > /dev/null
           node --input-type=module -e "
-            const api = await import('./dist/index.js');
-            if (typeof api.createStash !== 'function') throw new Error('createStash is missing');
+            const { createStash } = await import('stash-graphql-client');
+            const closing = new AbortController();
+            const stash = createStash({
+              endpoint: 'http://stash.test/graphql',
+              signal: closing.signal,
+              // Answers the request itself, so no Stash instance is needed, and no network either.
+              fetch: async () => Response.json({ data: { version: { version: 'stub' } } }),
+            });
+            const call = new AbortController();
+            const version = await stash.version((info) => ({ version: info.version }), {
+              signal: call.signal,
+            });
+            if (version.version !== 'stub') throw new Error('unexpected response');
           "
