@@ -70,10 +70,6 @@ export function createStash(options: StashOptions): StashClient {
   return client as StashClient;
 }
 
-/**
- * Reads the arguments of a root method. The schema may make arguments optional, and the types
- * then also accept the selection, or only the options, as the first argument.
- */
 type RootCall = [args: unknown, select: unknown, options: RequestOptions | undefined];
 
 /**
