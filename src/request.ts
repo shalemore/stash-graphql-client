@@ -71,13 +71,18 @@ export function buildRequest(kind: OperationKind, select: unknown) {
     if (root?.[0] !== kind) throw new Error(`${node.name} is not a ${kind} field`);
     const [, types, files] = root;
     upload ||= files === true;
+    const args = entries(node.args ?? {}).filter(([, argument]) => argument !== undefined);
+    const provided = new Set(args.map(([name]) => name));
+    for (const [name, type] of Object.entries(types)) {
+      if (type.endsWith("!") && !provided.has(name)) {
+        throw new Error(`Missing required argument ${name} on ${node.name}`);
+      }
+    }
     const calls: string[] = [];
-    for (const [name, argument] of entries(node.args ?? {})) {
-      // undefined means "not passed"; null is a meaningful value and is sent as is.
-      if (argument === undefined) continue;
+    for (const [name, argument] of args) {
       const type = types[name];
       if (type === undefined) throw new Error(`Unknown argument ${name} on ${node.name}`);
-      const variable = selected.length === 1 ? name : `${key}_${name}`;
+      const variable = graphqlName(selected.length === 1 ? name : `${key}_${name}`);
       definitions.push(`$${variable}:${type}`);
       calls.push(`${name}:$${variable}`);
       variables[variable] = argument;

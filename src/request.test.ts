@@ -203,3 +203,27 @@ test("rejects invalid selections before sending", async () => {
     "A selection must select at least one field",
   );
 });
+
+test("rejects a missing required root argument", async () => {
+  const stash = createStash({ endpoint: "http://stash.test/graphql" });
+  expect(
+    // @ts-expect-error input is required, but plain JavaScript callers can leave it out
+    await rejection(stash.importObjects({})),
+  ).toBe("Missing required argument input on importObjects");
+  expect(
+    // @ts-expect-error an explicitly undefined argument counts as not passed
+    await rejection(stash.importObjects({ input: undefined })),
+  ).toBe("Missing required argument input on importObjects");
+});
+
+test("rejects aliases that cannot name a variable", async () => {
+  const stash = createStash({ endpoint: "http://stash.test/graphql" });
+  expect(
+    await rejection(
+      stash.query((query) => ({
+        "a-b": query.findScenes({ scene_ids: [1] }, (result) => ({ count: result.count })),
+        version: query.version((result) => ({ version: result.version })),
+      })),
+    ),
+  ).toBe("Invalid GraphQL name: a-b_scene_ids");
+});
