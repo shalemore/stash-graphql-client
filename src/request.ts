@@ -90,9 +90,6 @@ export function buildRequest(kind: OperationKind, select: unknown) {
     return selectField(key, node, calls);
   });
   if (roots.length === 0) throw new Error("An operation must select at least one field");
-  if (kind === "subscription" && roots.length > 1) {
-    throw new Error("A subscription must have exactly one root field");
-  }
   const header = definitions.length > 0 ? `(${definitions.join(",")})` : "";
   const request: GraphQLRequest = { query: `${kind}${header}{${roots.join(" ")}}`, variables };
   return { request, upload };
