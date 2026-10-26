@@ -5,7 +5,8 @@ import { expect, expectTypeOf, test } from "bun:test";
 
 import type { StashClient } from "./client.ts";
 import type { JobStatusUpdateType, Objects } from "./generated/schema.ts";
-import type { Fields, R, Result } from "./types.ts";
+import type { R } from "./index.ts";
+import type { Fields, Result } from "./types.ts";
 
 async function resultTypes(stash: StashClient) {
   const found = await stash.findPerformers({ filter: { per_page: 1 } }, (result) => ({

@@ -14,6 +14,7 @@ export type {
   Fields,
   Fragment,
   ObjectName,
+  R,
   Result,
   RootField,
   Selection,
