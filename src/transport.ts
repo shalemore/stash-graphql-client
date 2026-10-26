@@ -167,7 +167,6 @@ type HeaderWebSocket = new (
   init: { protocols?: string[] | undefined; headers: Record<string, string> },
 ) => WebSocket;
 
-/** Loaded on first use, so code without subscriptions never bundles graphql-ws. */
 /** Loaded on first use, so HTTP-only users don't need the optional graphql-ws package. */
 async function loadSubscriptions() {
   try {
