@@ -109,7 +109,9 @@ export function createTransport(options: StashOptions) {
       let source: Promise<AsyncIterableIterator<unknown>> | undefined;
       const open = () =>
         (source ??= subscriptions().then((subscriber) => subscriber.iterate(request)));
-      const stop = () => void subscription.return();
+      // Nobody is left to handle a failing close once the consumer sees a finished subscription,
+      // and an unhandled rejection here would take the process down.
+      const stop = () => void subscription.return().catch(() => {});
       // Delegate instead of wrapping in an async generator: a generator only handles return()
       // at its next yield, so an idle subscription could never be stopped.
       const subscription: Subscription<unknown> = {

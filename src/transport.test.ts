@@ -99,6 +99,33 @@ test("a subscription created with an aborted signal never connects", async () =>
   expect(connected).toBe(false);
 });
 
+test("a failing close on abort does not become an unhandled rejection", async () => {
+  let finish: ((result: IteratorResult<unknown>) => void) | undefined;
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    subscriptions: {
+      iterate: () => ({
+        next: () => new Promise<IteratorResult<unknown>>((resolve) => (finish = resolve)),
+        // Closing a subscription can fail, and the abort has no caller to report it to.
+        async return() {
+          finish?.({ value: undefined, done: true });
+          throw new Error("close failed");
+        },
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+      }),
+    },
+  });
+  const controller = new AbortController();
+  const updates = stash.scanCompleteSubscribe({ signal: controller.signal });
+  const idle = updates.next();
+  controller.abort();
+
+  expect(await idle).toEqual({ value: undefined, done: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
 test("subscription errors are thrown", async () => {
   const stash = createStash({
     endpoint: "http://stash.test/graphql",
