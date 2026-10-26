@@ -66,7 +66,7 @@ type ScalarField<A, V> =
 /** How a selected value arrives: as a nested field, a request or a subscription. */
 type Delivery<Kind, V> = Kind extends "subscription"
   ? Subscription<V>
-  : Kind extends "query"
+  : Kind extends "request"
     ? Promise<V>
     : Field<V>;
 
@@ -104,11 +104,17 @@ type ArgsOf<Name extends ObjectName, K> = Name extends keyof FieldArgs
     : {}
   : {};
 
-type FieldOf<Name extends ObjectName, K extends keyof Objects[Name]> = [
-  RefName<Objects[Name][K]>,
-] extends [never]
-  ? ScalarField<ArgsOf<Name, K>, Wrap<Objects[Name][K], never>>
-  : ObjectField<ArgsOf<Name, K>, Objects[Name][K], RefName<Objects[Name][K]>>;
+/** A field of type `T` with arguments `A`: a selected value, or a method on a root field. */
+type FieldType<A, T, Kind = "field", O = never> = [RefName<T>] extends [never]
+  ? Kind extends "field"
+    ? ScalarField<A, Wrap<T, never>>
+    : ScalarMethod<A, Wrap<T, never>, Kind>
+  : ObjectField<A, T, RefName<T>, Kind, O>;
+
+type FieldOf<Name extends ObjectName, K extends keyof Objects[Name]> = FieldType<
+  ArgsOf<Name, K>,
+  Objects[Name][K]
+>;
 
 /**
  * Selects fields on member `M` of a union or interface. Spread the result into the selection;
@@ -127,7 +133,7 @@ type Pickable<Name extends ObjectName> = {
 /** Selects scalar fields by name. Spread the result into a selection, or return it as is. */
 type PickFields<Name extends ObjectName> = <K extends Pickable<Name>>(
   ...names: K[]
-) => { [P in K]: FieldOf<Name, P> };
+) => { [P in K]: Field<Value<FieldOf<Name, P>>> };
 
 /**
  * The fields of object type `Name`, passed to selection callbacks. Reading a field selects it;
@@ -176,11 +182,9 @@ type ScalarMethod<A, V, Kind> =
       ? (args?: A, options?: RequestOptions) => Delivery<Kind, V>
       : (args: A, options?: RequestOptions) => Delivery<Kind, V>;
 
-type Method<K extends RootField, Kind> = [RefName<Root[K]>] extends [never]
-  ? ScalarMethod<Args<K>, Wrap<Root[K], never>, Kind>
-  : ObjectField<Args<K>, Root[K], RefName<Root[K]>, Kind, RequestOptions>;
+type Method<K extends RootField, Kind> = FieldType<Args<K>, Root[K], Kind, RequestOptions>;
 
 /** One method per root field: arguments first (when it has any), then the selection. */
 export type RootMethods = {
-  [K in keyof Root]: Method<K, K extends SubscriptionField ? "subscription" : "query">;
+  [K in keyof Root]: Method<K, K extends SubscriptionField ? "subscription" : "request">;
 };
