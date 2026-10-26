@@ -27,14 +27,16 @@ jobs:
         node: ["20.3.0", 24]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+      # Built before setup-node on purpose: the TypeScript CLI is a file without an extension, which
+      # the oldest Node.js cannot load from a module package. Only running the package needs it.
       - run: bun run build
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
       - name: Pack the package
         run: npm pack --pack-destination "$RUNNER_TEMP"
       # Nothing leaves the runner: fetch is stubbed, and the endpoint is only a required option. The
