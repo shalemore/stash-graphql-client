@@ -1,44 +1,63 @@
 import { ROOTS } from "./generated/roots.ts";
 import { buildRequest, field, fields, type OperationKind } from "./request.ts";
-import { createTransport, type StashOptions } from "./transport.ts";
+import { createTransport, type RequestOptions, type StashOptions } from "./transport.ts";
 import type { Fields, Output, RootMethods, Selection } from "./types.ts";
 
-/** A client with one method per root field, plus `query`, `mutation` and `request`. */
+/**
+ * A client with one method per root field, plus `query`, `mutation` and `request`.
+ * Every method takes an optional trailing `options` argument, e.g. to pass an `AbortSignal`.
+ */
 export interface StashClient extends RootMethods {
   /**
    * Sends several queries in one request. The keys become the result keys, so the same root
    * field can be selected twice with different arguments.
    */
-  query<S extends Selection>(select: (query: Fields<"Query">) => S): Promise<Output<"Query", S>>;
+  query<S extends Selection>(
+    select: (query: Fields<"Query">) => S,
+    options?: RequestOptions,
+  ): Promise<Output<"Query", S>>;
   /** Sends several mutations in one request; Stash runs them in order. */
   mutation<S extends Selection>(
     select: (mutation: Fields<"Mutation">) => S,
+    options?: RequestOptions,
   ): Promise<Output<"Mutation", S>>;
   /** Sends any GraphQL document as is and returns the untyped `data`. */
-  request(query: string, variables?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  request(
+    query: string,
+    variables?: Record<string, unknown>,
+    options?: RequestOptions,
+  ): Promise<Record<string, unknown>>;
 }
 
 export function createStash(options: StashOptions): StashClient {
   const transport = createTransport(options);
   // Async, so that errors in selection callbacks reject instead of throwing.
-  const send = async (kind: OperationKind, select: () => unknown) => {
+  const send = async (kind: OperationKind, select: () => unknown, call?: RequestOptions) => {
     const { request, upload } = buildRequest(kind, select());
-    return transport.send(request, upload);
+    return transport.send(request, upload, call);
   };
-  const operation = (kind: OperationKind) => (select: (fields: unknown) => unknown) =>
-    send(kind, () => select(fields));
+  const operation =
+    (kind: OperationKind) => (select: (fields: unknown) => unknown, call?: RequestOptions) =>
+      send(kind, () => select(fields), call);
 
   const methods = Object.fromEntries(
-    Object.entries(ROOTS).map(([name, [kind]]) => {
+    Object.entries(ROOTS).map(([name, [kind, types]]) => {
       const root = (args: unknown, select: unknown) => ({ [name]: field(name)(args, select) });
-      return [
-        name,
+      const method =
         kind === "subscription"
-          ? (args?: unknown, select?: unknown) =>
-              transport.subscribe(buildRequest(kind, root(args, select)).request, name)
-          : async (args?: unknown, select?: unknown) =>
-              (await send(kind, () => root(args, select)))[name],
-      ];
+          ? (...rest: unknown[]) => {
+              const [args, select, call] = rootCall(types, rest);
+              return transport.subscribe(
+                buildRequest(kind, root(args, select)).request,
+                name,
+                call,
+              );
+            }
+          : async (...rest: unknown[]) => {
+              const [args, select, call] = rootCall(types, rest);
+              return (await send(kind, () => root(args, select), call))[name];
+            };
+      return [name, method];
     }),
   );
   const client: object = {
@@ -49,4 +68,37 @@ export function createStash(options: StashOptions): StashClient {
   };
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one method per entry in ROOTS
   return client as StashClient;
+}
+
+/**
+ * Reads the arguments of a root method. The schema may make arguments optional, and the types
+ * then also accept the selection, or only the options, as the first argument.
+ */
+type RootCall = [args: unknown, select: unknown, options: RequestOptions | undefined];
+
+/**
+ * Reads the arguments of a root method. The schema may make arguments optional, and the types
+ * then also accept the selection, or only the options, as the first argument.
+ */
+function rootCall(types: Record<string, string>, rest: unknown[]): RootCall {
+  const [first, second, third] = rest;
+  if (rest.length === 1) {
+    if (typeof first === "function") return [undefined, first, undefined];
+    return Object.keys(types).length === 0
+      ? [undefined, undefined, callOptions(first)]
+      : [first, undefined, undefined];
+  }
+  if (rest.length === 2) {
+    if (typeof first === "function") return [undefined, first, callOptions(second)];
+    return typeof second === "function"
+      ? [first, second, undefined]
+      : [first, undefined, callOptions(second)];
+  }
+  return [first, second, callOptions(third)];
+}
+
+/** The per-call options of a call, which the types allow to be left out. */
+function callOptions(value: unknown): RequestOptions | undefined {
+  if (typeof value !== "object" || value === null || !("signal" in value)) return undefined;
+  return value.signal instanceof AbortSignal ? { signal: value.signal } : undefined;
 }

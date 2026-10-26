@@ -225,14 +225,45 @@ try {
 }
 ```
 
+## Cancellation and timeouts
+
+Every method takes an optional last argument with an `AbortSignal`, as `fetch` does:
+
+```ts
+const controller = new AbortController();
+const found = stash.findScenes((result) => result.$pick("count"), { signal: controller.signal });
+controller.abort(); // `found` rejects with the AbortError of fetch, and the request is dropped
+
+// A deadline needs no controller
+const scene = await stash.findScene({ id: "42" }, (scene) => scene.$pick("title"), {
+  signal: AbortSignal.timeout(5_000),
+});
+
+// A subscription ends instead of throwing, as if the loop was left
+const stopping = new AbortController();
+for await (const update of stash.jobsSubscribe((update) => update.$pick("type"), {
+  signal: stopping.signal,
+})) {
+  console.log(update.type);
+}
+```
+
+An aborted request rejects with the same `AbortError` that `fetch` throws, so `error.name === "AbortError"` tells it apart from a `StashError`. A deadline rejects with a `TimeoutError`. Combine signals with `AbortSignal.any([...])`.
+
+To apply a deadline or a signal to every call instead, pass `timeoutMs` or `signal` to `createStash`, see [Options](#options). A signal of the client cancels the requests in flight on top of their own signals.
+
 ## Options
 
 ```ts
+const closing = new AbortController();
+
 createStash({
   endpoint: "https://stash.example.com/graphql",
   apiKey: "...",
   headers: { "X-Proxy-Token": "..." }, // e.g. for a reverse proxy
-  fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }), // or any fetch-like function
+  timeoutMs: 30_000, // deadline for every request
+  signal: closing.signal, // cancels every request and subscription
+  fetch: (url, init) => fetch(url, init), // or any fetch-like function
   // subscriptions: your own graphql-ws client, see Subscriptions
 });
 ```

@@ -4,6 +4,7 @@
 import { expect, expectTypeOf, test } from "bun:test";
 
 import type { StashClient } from "./client.ts";
+import type { JobStatusUpdateType } from "./generated/schema.ts";
 import type { Fields, Result } from "./types.ts";
 
 async function resultTypes(stash: StashClient) {
@@ -149,6 +150,30 @@ function reusableSelections() {
   >();
 }
 
+async function perCallOptions(stash: StashClient, signal: AbortSignal) {
+  // Every method takes a trailing options argument, for cancellation; results are unchanged.
+  expectTypeOf(
+    await stash.findScenes((found) => ({ count: found.count }), { signal }),
+  ).toEqualTypeOf<{ count: number }>();
+  expectTypeOf(
+    await stash.findScene({ id: "1" }, (scene) => ({ id: scene.id }), { signal }),
+  ).toEqualTypeOf<{ id: string } | null>();
+  expectTypeOf(
+    await stash.performerDestroy({ input: { id: "1" } }, { signal }),
+  ).toEqualTypeOf<boolean>();
+  expectTypeOf(
+    await stash.query((query) => ({ a: query.findScenes((f) => ({ count: f.count })) }), {
+      signal,
+    }),
+  ).toEqualTypeOf<{ a: { count: number } }>();
+  expectTypeOf(await stash.request("{ version { version } }", {}, { signal })).toEqualTypeOf<
+    Record<string, unknown>
+  >();
+  for await (const update of stash.jobsSubscribe((status) => status.$pick("type"), { signal })) {
+    expectTypeOf(update).toEqualTypeOf<{ type: JobStatusUpdateType }>();
+  }
+}
+
 async function invalidCalls(stash: StashClient) {
   // @ts-expect-error object fields can't be picked, they need a selection
   await stash.findScene({ id: "1" }, (scene) => scene.$pick("studio"));
@@ -183,6 +208,7 @@ test("compile-time checks are part of `bun check`", () => {
     pickTypes,
     unionTypes,
     reusableSelections,
+    perCallOptions,
     invalidCalls,
-  ]).toHaveLength(6);
+  ]).toHaveLength(7);
 });

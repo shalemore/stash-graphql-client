@@ -17,10 +17,23 @@ export interface StashOptions {
   apiKey?: string | undefined;
   /** Extra request headers. */
   headers?: Record<string, string> | undefined;
-  /** Custom fetch, e.g. to add timeouts or for tests. */
+  /** Cancels every request and subscription this client makes, as an `AbortSignal` does. */
+  signal?: AbortSignal | undefined;
+  /** Deadline for every HTTP request, e.g. `30_000` for 30 seconds. Subscriptions have none. */
+  timeoutMs?: number | undefined;
+  /** Custom fetch, e.g. to route through a proxy or for tests. */
   fetch?: ((input: string, init: RequestInit) => Promise<Response>) | undefined;
   /** Custom `graphql-ws` client for subscriptions; by default one is created on first use. */
   subscriptions?: SubscriptionClient | undefined;
+}
+
+/** Per-call options, passed as the last argument of every client method. */
+export interface RequestOptions {
+  /**
+   * Cancels the request or subscription the way `fetch` does. `AbortSignal.timeout(ms)` gives it a
+   * deadline; combine signals with `AbortSignal.any([...])`.
+   */
+  signal?: AbortSignal | undefined;
 }
 
 /** Thrown for non-2xx responses and GraphQL errors. */
@@ -58,7 +71,12 @@ export function createTransport(options: StashOptions) {
         ? createSubscriptionClient(options.endpoint, headers)
         : Promise.resolve(options.subscriptions));
 
-  const send = async (request: GraphQLRequest, upload = false) => {
+  const send = async (request: GraphQLRequest, upload = false, call?: RequestOptions) => {
+    const signal = combineSignals([
+      options.signal,
+      call?.signal,
+      options.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs),
+    ]);
     const files: [path: string, file: Blob][] = [];
     // The copy is only used by the multipart branch, so skip it when there is nothing to upload.
     const withFiles = upload && hasFile(request.variables);
@@ -67,6 +85,7 @@ export function createTransport(options: StashOptions) {
       method: "POST",
       // Never forward the API key to another host.
       redirect: "error",
+      ...(signal === undefined ? {} : { signal }),
       ...(files.length === 0
         ? {
             headers: { "content-type": "application/json", ...headers },
@@ -81,14 +100,21 @@ export function createTransport(options: StashOptions) {
   return {
     send,
     /** Streams the values of root field `field`. */
-    subscribe(request: GraphQLRequest, field: string): Subscription<unknown> {
+    subscribe(
+      request: GraphQLRequest,
+      field: string,
+      call?: RequestOptions,
+    ): Subscription<unknown> {
+      const signal = combineSignals([options.signal, call?.signal]);
       let source: Promise<AsyncIterableIterator<unknown>> | undefined;
       const open = () =>
         (source ??= subscriptions().then((subscriber) => subscriber.iterate(request)));
+      const stop = () => void subscription.return();
       // Delegate instead of wrapping in an async generator: a generator only handles return()
       // at its next yield, so an idle subscription could never be stopped.
-      return {
+      const subscription: Subscription<unknown> = {
         async next() {
+          if (signal?.aborted === true) return { value: undefined, done: true };
           const iterator = await open();
           const result = await iterator.next();
           if (result.done === true) return result;
@@ -100,6 +126,7 @@ export function createTransport(options: StashOptions) {
           }
         },
         async return() {
+          signal?.removeEventListener("abort", stop);
           const iterator = source === undefined ? undefined : await source;
           await iterator?.return?.();
           return { value: undefined, done: true };
@@ -108,11 +135,27 @@ export function createTransport(options: StashOptions) {
           return this;
         },
       };
+      // An abort has to reach an idle subscription too, so it cannot wait for the next value.
+      if (signal?.aborted === true) stop();
+      else signal?.addEventListener("abort", stop, { once: true });
+      return subscription;
     },
     // Files may hide anywhere in a hand-written document, so always look for them.
-    request: (query: string, variables: Record<string, unknown> = {}) =>
-      send({ query, variables }, true),
+    request: (query: string, variables: Record<string, unknown> = {}, call?: RequestOptions) =>
+      send({ query, variables }, true, call),
   };
+}
+
+/**
+ * Merges the signals of one call into the single one `fetch` takes. Missing signals are dropped,
+ * and the common case of none or one allocates nothing. `AbortSignal.any` is why Node.js 20.3 is
+ * the oldest supported release.
+ */
+function combineSignals(signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
+  const present = signals.filter((signal): signal is AbortSignal => signal !== undefined);
+  const [first] = present;
+  if (first === undefined) return undefined;
+  return present.length === 1 ? first : AbortSignal.any(present);
 }
 
 /** A WebSocket constructor that accepts headers for the upgrade request, as Bun and Node do. */

@@ -1,7 +1,12 @@
 export { createStash } from "./client.ts";
 export type { StashClient } from "./client.ts";
 export { StashError } from "./transport.ts";
-export type { StashOptions, Subscription, SubscriptionClient } from "./transport.ts";
+export type {
+  StashOptions,
+  RequestOptions,
+  Subscription,
+  SubscriptionClient,
+} from "./transport.ts";
 export type { GraphQLRequest } from "./request.ts";
 export type {
   Args,

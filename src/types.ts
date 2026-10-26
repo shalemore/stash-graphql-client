@@ -1,5 +1,5 @@
 import type { Abstract, Objects } from "./generated/schema.ts";
-import type { Subscription } from "./transport.ts";
+import type { RequestOptions, Subscription } from "./transport.ts";
 
 /** A field with arguments `A` and return type expression `T`. */
 export interface F<A, T> {
@@ -85,20 +85,31 @@ type Delivery<Kind, V> = Kind extends "subscription"
     ? Promise<V>
     : Field<V>;
 
-type ObjectField<A, T, Name extends ObjectName, Kind = "field"> =
+/** A trailing per-call options parameter, or none at all when `O` is `never`. */
+type OptionsParam<O> = [O] extends [never] ? [] : [options?: O];
+
+type ObjectField<A, T, Name extends ObjectName, Kind = "field", O = never> =
   NoArgs<A> extends true
-    ? <S extends Selection>(select: Select<Name, S>) => Delivery<Kind, Wrap<T, Output<Name, S>>>
+    ? <S extends Selection>(
+        select: Select<Name, S>,
+        ...options: OptionsParam<O>
+      ) => Delivery<Kind, Wrap<T, Output<Name, S>>>
     : {} extends A
       ? {
-          <S extends Selection>(select: Select<Name, S>): Delivery<Kind, Wrap<T, Output<Name, S>>>;
+          <S extends Selection>(
+            select: Select<Name, S>,
+            ...options: OptionsParam<O>
+          ): Delivery<Kind, Wrap<T, Output<Name, S>>>;
           <S extends Selection>(
             args: A | undefined,
             select: Select<Name, S>,
+            ...options: OptionsParam<O>
           ): Delivery<Kind, Wrap<T, Output<Name, S>>>;
         }
       : <S extends Selection>(
           args: A,
           select: Select<Name, S>,
+          ...options: OptionsParam<O>
         ) => Delivery<Kind, Wrap<T, Output<Name, S>>>;
 
 type FieldOf<Definition> =
@@ -169,15 +180,15 @@ export type Args<K extends RootField> =
 
 type ScalarMethod<A, V, Kind> =
   NoArgs<A> extends true
-    ? () => Delivery<Kind, V>
+    ? (options?: RequestOptions) => Delivery<Kind, V>
     : {} extends A
-      ? (args?: A) => Delivery<Kind, V>
-      : (args: A) => Delivery<Kind, V>;
+      ? (args?: A, options?: RequestOptions) => Delivery<Kind, V>
+      : (args: A, options?: RequestOptions) => Delivery<Kind, V>;
 
 type Method<Definition, Kind> =
   Definition extends F<infer A, infer T>
     ? Unwrap<T> extends R<infer Name>
-      ? ObjectField<A, T, Name, Kind>
+      ? ObjectField<A, T, Name, Kind, RequestOptions>
       : ScalarMethod<A, Wrap<T, never>, Kind>
     : never;
 

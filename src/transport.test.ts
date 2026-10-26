@@ -42,17 +42,7 @@ test("streams subscription results and stops when the loop ends", async () => {
 });
 
 test("an idle subscription stops as soon as it is returned", async () => {
-  let stopped = false;
-  const source: AsyncIterableIterator<unknown> = {
-    next: () => new Promise(() => {}),
-    return: async () => {
-      stopped = true;
-      return { value: undefined, done: true };
-    },
-    [Symbol.asyncIterator]() {
-      return this;
-    },
-  };
+  const { source, stopped } = idleSubscription();
   const stash = createStash({
     endpoint: "http://stash.test/graphql",
     subscriptions: { iterate: () => source },
@@ -60,7 +50,53 @@ test("an idle subscription stops as soon as it is returned", async () => {
   const updates = stash.scanCompleteSubscribe();
   void updates.next();
   await updates.return?.();
-  expect(stopped).toBe(true);
+  expect(stopped()).toBe(true);
+});
+
+test("aborting ends a subscription like return()", async () => {
+  const { source, stopped } = idleSubscription();
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    subscriptions: { iterate: () => source },
+  });
+  const controller = new AbortController();
+  const updates = stash.scanCompleteSubscribe({ signal: controller.signal });
+  const idle = updates.next();
+  controller.abort();
+
+  expect(await idle).toEqual({ value: undefined, done: true });
+  expect(stopped()).toBe(true);
+});
+
+test("the signal of the client ends subscriptions too", async () => {
+  const { source, stopped } = idleSubscription();
+  const controller = new AbortController();
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    signal: controller.signal,
+    subscriptions: { iterate: () => source },
+  });
+  const idle = stash.scanCompleteSubscribe().next();
+  controller.abort();
+
+  expect(await idle).toEqual({ value: undefined, done: true });
+  expect(stopped()).toBe(true);
+});
+
+test("a subscription created with an aborted signal never connects", async () => {
+  let connected = false;
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    subscriptions: {
+      iterate() {
+        connected = true;
+        throw new Error("unreachable");
+      },
+    },
+  });
+  const updates = stash.scanCompleteSubscribe({ signal: AbortSignal.abort() });
+  expect(await updates.next()).toEqual({ value: undefined, done: true });
+  expect(connected).toBe(false);
 });
 
 test("subscription errors are thrown", async () => {
@@ -129,8 +165,107 @@ test("request passes any GraphQL document through", async () => {
   expect(data).toEqual({ a: { count: 1 }, b: { count: 2 } });
 });
 
+test("a per-call signal reaches fetch, and only for that call", async () => {
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    fetch: async (_url, init) => {
+      signals.push(init.signal);
+      return Response.json({
+        data: {
+          findScenes: { count: 1 },
+          findScene: { id: "1" },
+          performerDestroy: true,
+          a: { count: 1 },
+        },
+      });
+    },
+  });
+  const { signal } = new AbortController();
+
+  // Without arguments the selection, or only the options, comes first.
+  await stash.findScenes((found) => ({ count: found.count }), { signal });
+  await stash.findScenes((found) => ({ count: found.count }));
+  await stash.findScene({ id: "1" }, (scene) => ({ id: scene.id }), { signal });
+  await stash.performerDestroy({ input: { id: "1" } }, { signal });
+  await stash.request("{ a { count } }", {}, { signal });
+  expect(signals).toEqual([signal, undefined, signal, signal, signal]);
+});
+
+test("aborting rejects the request with the AbortError of fetch", async () => {
+  const stash = createStash({ endpoint: "http://stash.test/graphql", fetch: pendingFetch });
+  const controller = new AbortController();
+  const call = stash.findScenes((found) => ({ count: found.count }), {
+    signal: controller.signal,
+  });
+  controller.abort();
+
+  const error = await call.catch((caught: unknown) => caught);
+  expect(error).toBe(controller.signal.reason);
+  expect(error).toMatchObject({ name: "AbortError" });
+});
+
+test("timeoutMs gives every request a deadline", async () => {
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    timeoutMs: 5,
+    fetch: pendingFetch,
+  });
+  const error = await stash
+    .findScenes((found) => ({ count: found.count }))
+    .catch((caught: unknown) => caught);
+  expect(error).toMatchObject({ name: "TimeoutError" });
+});
+
+test("the signal of the client cancels a request that has a signal of its own", async () => {
+  const controller = new AbortController();
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    signal: controller.signal,
+    fetch: pendingFetch,
+  });
+  const call = stash.findScenes((found) => ({ count: found.count }), {
+    signal: new AbortController().signal,
+  });
+  controller.abort();
+
+  const error = await call.catch((caught: unknown) => caught);
+  expect(error).toMatchObject({ name: "AbortError" });
+});
+
+/** A fetch that, like the real one, rejects when the signal of the request aborts. */
+function pendingFetch(_url: string, init: RequestInit) {
+  return new Promise<Response>((_resolve, reject) =>
+    init.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+  );
+}
+
 function text(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+/** A source that stays idle until it is returned, like a subscription with nothing to send. */
+function idleSubscription() {
+  let stopped = false;
+  let finish: ((result: IteratorResult<unknown>) => void) | undefined;
+  const source: AsyncIterableIterator<unknown> = {
+    next() {
+      if (stopped) return Promise.resolve({ value: undefined, done: true });
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+    // Like graphql-ws, the source resolves a pending next() when it is returned.
+    async return() {
+      stopped = true;
+      finish?.({ value: undefined, done: true });
+      return { value: undefined, done: true };
+    },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+  };
+  return { source, stopped: () => stopped };
 }
 
 test("keeps the partial data of a response that also has errors", async () => {
