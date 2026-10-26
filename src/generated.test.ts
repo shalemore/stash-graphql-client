@@ -9,15 +9,12 @@ import { readFileSync } from "node:fs";
 import { buildSchema } from "graphql";
 
 import { hasUpload } from "../scripts/schema-upload.ts";
-import { ROOTS } from "./generated/roots.ts";
+import { ROOTS, type Roots } from "./generated/roots.ts";
 
 const schema = buildSchema(readFileSync("schema/stash.graphql", "utf8"));
 
 test("ROOTS matches the root fields of the committed schema", () => {
-  const expected: Record<
-    string,
-    ["query" | "mutation" | "subscription", Record<string, string>, true?]
-  > = {};
+  const expected: Roots = {};
   for (const [kind, root] of [
     ["query", schema.getQueryType()],
     ["mutation", schema.getMutationType()],

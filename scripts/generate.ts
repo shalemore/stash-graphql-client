@@ -197,7 +197,10 @@ await Bun.write(
 );
 await Bun.write(
   "src/generated/roots.ts",
-  `${header}export const STASH_VERSION = ${JSON.stringify(version)};\n\n` +
-    `export const ROOTS: Record<string, ["query" | "mutation" | "subscription", Record<string, string>, true?]> = ${JSON.stringify(roots)};\n`,
+  `${header}import type { StashVersion } from "./schema.ts";\n\n` +
+    `export const STASH_VERSION: StashVersion = ${JSON.stringify(version)};\n\n` +
+    `/** A root field: its kind, the types of its arguments, and whether a request can carry files. */\n` +
+    `export type Roots = Record<string, [kind: "query" | "mutation" | "subscription", args: Record<string, string>, files?: true]>;\n\n` +
+    `export const ROOTS: Roots = ${JSON.stringify(roots)};\n`,
 );
 console.log(`Generated ${Object.keys(roots).length} root fields from Stash ${version}`);
