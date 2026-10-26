@@ -14,6 +14,9 @@ A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL 
 npm install stash-graphql-client
 ```
 
+Needs `fetch` and `AbortSignal.any`: Node.js 20.3 or newer, Bun, or a recent browser. The types need
+TypeScript 5.0 or newer.
+
 ## Quick start
 
 ```ts
