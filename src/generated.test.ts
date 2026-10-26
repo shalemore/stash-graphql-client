@@ -1,32 +1,17 @@
 /**
- * Checks the generated runtime table against the committed schema, independently of the
- * generator, so a mismatch fails here instead of at the server.
+ * Checks the generated runtime table against the committed schema, so a mismatch fails here instead
+ * of at the server. The rule that decides which requests may carry files is shared with the
+ * generator and covered by `scripts/schema-upload.test.ts`.
  */
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import {
-  buildSchema,
-  getNamedType,
-  isInputObjectType,
-  isScalarType,
-  type GraphQLInputType,
-} from "graphql";
+import { buildSchema } from "graphql";
 
+import { hasUpload } from "../scripts/schema-upload.ts";
 import { ROOTS } from "./generated/roots.ts";
 
 const schema = buildSchema(readFileSync("schema/stash.graphql", "utf8"));
-
-/** Whether a type can reach an Upload, mirroring the generator on purpose. */
-function hasUpload(type: GraphQLInputType, seen = new Set<string>()): boolean {
-  const named = getNamedType(type);
-  if (seen.has(named.name)) return false;
-  seen.add(named.name);
-  if (isScalarType(named)) return named.name === "Upload";
-  return isInputObjectType(named)
-    ? Object.values(named.getFields()).some((field) => hasUpload(field.type, seen))
-    : false;
-}
 
 test("ROOTS matches the root fields of the committed schema", () => {
   const expected: Record<

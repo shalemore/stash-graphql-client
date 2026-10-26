@@ -22,6 +22,7 @@ import {
 } from "graphql";
 
 import { parseSchemaHeader } from "./schema-header.ts";
+import { hasUpload } from "./schema-upload.ts";
 
 /** A root field with the same name as a client method would be shadowed. */
 const CLIENT_METHODS = new Set(["query", "mutation", "request"]);
@@ -162,17 +163,6 @@ for (const type of Object.values(schema.getTypeMap())) {
     const members = schema.getPossibleTypes(type).map((member) => JSON.stringify(member.name));
     abstracts.push(`  ${type.name}: ${members.join(" | ")};`);
   }
-}
-
-/** Whether an input type can contain an Upload, so only those requests look for files. */
-function hasUpload(type: GraphQLInputType, seen = new Set<string>()): boolean {
-  const named = getNamedType(type);
-  if (seen.has(named.name)) return false;
-  seen.add(named.name);
-  if (isScalarType(named)) return named.name === "Upload";
-  return isInputObjectType(named)
-    ? Object.values(named.getFields()).some((value) => hasUpload(value.type, seen))
-    : false;
 }
 
 const roots: Record<string, [string, Record<string, string>, true?]> = {};
