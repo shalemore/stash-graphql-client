@@ -3,8 +3,7 @@
   "compilerOptions": {
     "rewriteRelativeImportExtensions": true,
     "paths": {
-      "stash-graphql-client": ["./src/index.ts"],
-      "stash-graphql-client/operations": ["./src/operations.ts"]
+      "stash-graphql-client": ["./src/index.ts"]
     }
   },
   "include": ["src", "scripts", "example"]
