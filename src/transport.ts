@@ -60,7 +60,9 @@ export function createTransport(options: StashOptions) {
 
   const send = async (request: GraphQLRequest, upload = false) => {
     const files: [path: string, file: Blob][] = [];
-    const variables = upload ? extractFiles(request.variables, "variables", files) : undefined;
+    // The copy is only used by the multipart branch, so skip it when there is nothing to upload.
+    const withFiles = upload && hasFile(request.variables);
+    const variables = withFiles ? extractFiles(request.variables, "variables", files) : undefined;
     const response = await (options.fetch ?? fetch)(options.endpoint, {
       method: "POST",
       // Never forward the API key to another host.
@@ -168,6 +170,14 @@ function multipart(query: string, variables: unknown, files: [string, Blob][]) {
   );
   for (const [index, [, file]] of files.entries()) form.append(String(index), file);
   return form;
+}
+
+/** Whether variables contain a file, checked before copying them for a multipart request. */
+function hasFile(value: unknown): boolean {
+  if (value instanceof Blob) return true;
+  if (Array.isArray(value)) return value.some(hasFile);
+  if (isObject(value)) return Object.values(value).some(hasFile);
+  return false;
 }
 
 /** Replaces files with null and records their paths, as the multipart spec requires. */
