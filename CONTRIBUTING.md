@@ -8,6 +8,7 @@ bun check          # type check
 bun run lint       # oxfmt and oxlint
 bun test           # also type-checks the examples in the README
 bun run build      # writes dist
+bun run check:package  # publint and attw on the packed tarball (needs a build)
 bun run verify     # all of the above, the same as CI
 ```
 

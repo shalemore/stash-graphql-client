@@ -45,20 +45,19 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+      # Also builds dist and checks the packed tarball.
       - run: bun run verify
-      - run: bun run build
-      - name: Show the package contents
-        run: bun pm pack --dry-run
 
       # Only the README that npm shows names the Stash version; the one in the repository stays as is.
       - run: bun scripts/readme-version.ts
 
       # Trusted publishing: npm trusts this workflow through GitHub's short-lived identity token,
       # so no npm token is stored. It needs npm 11.5.1 or newer, which the runner image may lack.
+      # publishConfig enables provenance for the published tarball.
       - name: Publish to npm
         run: |
           npm install --global npm@latest
-          npm publish --provenance
+          npm publish
 
       # The notes list the commits since the previous release; pull request notes would miss
       # commits pushed straight to main.

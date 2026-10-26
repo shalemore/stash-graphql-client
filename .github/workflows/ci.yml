@@ -16,6 +16,28 @@ jobs:
       - run: bun install --frozen-lockfile
       # The generated code is committed, so it must match the committed schema.
       - run: bun run generate
-      - run: git diff --exit-code
+      - run: test -z "$(git status --porcelain)"
       - run: bun run verify
+
+  package:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The oldest supported runtime and one that also has WebSocket.
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
       - run: bun run build
+      - name: Import the built package
+        run: |
+          node --input-type=module -e "
+            const api = await import('./dist/index.js');
+            if (typeof api.createStash !== 'function') throw new Error('createStash is missing');
+          "
