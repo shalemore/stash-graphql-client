@@ -170,7 +170,10 @@ async function loadSubscriptions() {
   try {
     return await import("graphql-ws");
   } catch (error) {
-    throw new Error("Subscriptions need the optional `graphql-ws` package", { cause: error });
+    throw new Error(
+      "Subscriptions need the optional `graphql-ws` package; install it with `npm install graphql-ws`",
+      { cause: error },
+    );
   }
 }
 
