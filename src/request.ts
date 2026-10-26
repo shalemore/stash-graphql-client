@@ -117,9 +117,12 @@ function selectField(key: string, node: Node & { kind: "field" }, args: string[]
   return `${alias}${graphqlName(node.name)}${call}${selectionSet(node.select)}`;
 }
 
+const EMPTY_ARGS: string[] = [];
+
 /** Nested arguments are scalars (checked by the generator), so JSON is valid GraphQL syntax. */
 function literals(args: unknown) {
-  return entries(args ?? {})
+  if (args === undefined || args === null) return EMPTY_ARGS;
+  return entries(args)
     .filter(([, argument]) => argument !== undefined)
     .map(([key, argument]) => `${graphqlName(key)}:${literal(argument)}`);
 }
