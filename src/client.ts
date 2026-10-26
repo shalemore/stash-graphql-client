@@ -73,24 +73,14 @@ export function createStash(options: StashOptions): StashClient {
 type RootCall = [args: unknown, select: unknown, options: RequestOptions | undefined];
 
 /**
- * Reads the arguments of a root method, which the schema and the types can make optional. The
- * selection is always a function, and an object carrying a `signal` is the options, so anything
- * else is the arguments.
+ * Reads a call to a root method, whose arguments and options the types can make optional. The
+ * options come last, before them the selection, and before that the arguments.
  */
 function rootCall(rest: unknown[]): RootCall {
-  const [first, second, third] = rest;
-  if (rest.length === 1) {
-    if (typeof first === "function") return [undefined, first, undefined];
-    const options = callOptions(first);
-    return options === undefined ? [first, undefined, undefined] : [undefined, undefined, options];
-  }
-  if (rest.length === 2) {
-    if (typeof first === "function") return [undefined, first, callOptions(second)];
-    return typeof second === "function"
-      ? [first, second, undefined]
-      : [first, undefined, callOptions(second)];
-  }
-  return [first, second, callOptions(third)];
+  const options = callOptions(rest.at(-1));
+  const call = options === undefined ? rest : rest.slice(0, -1);
+  const at = call.findIndex((value) => typeof value === "function");
+  return at === -1 ? [call[0], undefined, options] : [call[at - 1], call[at], options];
 }
 
 /**
