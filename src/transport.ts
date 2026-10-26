@@ -125,7 +125,11 @@ export function createTransport(options: StashOptions) {
           if (signal?.aborted === true) return { value: undefined, done: true };
           const iterator = await open();
           const result = await iterator.next();
-          if (result.done === true) return result;
+          if (result.done === true) {
+            // A finished subscription would otherwise stay reachable from a signal of the client.
+            signal?.removeEventListener("abort", stop);
+            return result;
+          }
           try {
             return { value: readData(result.value, 200, true)[field], done: false };
           } catch (error) {

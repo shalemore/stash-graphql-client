@@ -99,6 +99,30 @@ test("a subscription created with an aborted signal never connects", async () =>
   expect(connected).toBe(false);
 });
 
+test("a subscription that ended stops listening for an abort", async () => {
+  let listening = 0;
+  const signal = {
+    aborted: false,
+    addEventListener: () => void listening++,
+    removeEventListener: () => void listening--,
+  };
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    subscriptions: {
+      async *iterate() {
+        yield { data: { scanCompleteSubscribe: true } };
+      },
+    },
+  });
+  const updates = stash.scanCompleteSubscribe(
+    // @ts-expect-error only the shape of the signal matters here
+    { signal },
+  );
+  for await (const update of updates) void update;
+
+  expect(listening).toBe(0);
+});
+
 test("a failing close on abort does not become an unhandled rejection", async () => {
   let finish: ((result: IteratorResult<unknown>) => void) | undefined;
   const stash = createStash({
