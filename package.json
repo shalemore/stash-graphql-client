@@ -18,11 +18,18 @@
   ],
   "type": "module",
   "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "provenance": true
   },
   "scripts": {
     "lint": "oxfmt --check && oxlint",
@@ -30,12 +37,15 @@
     "schema": "bun scripts/schema.ts && bun run generate",
     "generate": "bun scripts/generate.ts && oxfmt schema src/generated",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "verify": "bun check && bun run lint && bun test"
+    "check:package": "publint && attw --pack . --profile esm-only",
+    "prepublishOnly": "bun run build",
+    "verify": "bun check && bun run lint && bun test && bun run build && bun run check:package"
   },
   "dependencies": {
     "graphql-ws": "^6.3.0"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@octokit/rest": "^22.0.1",
     "@tsconfig/bun": "^1.0.11",
     "@tsconfig/strictest": "^2.0.8",
@@ -45,6 +55,7 @@
     "oxfmt": "^0.72.0",
     "oxlint": "^1.87.0",
     "oxlint-tsgolint": "^7.0.2004",
+    "publint": "^0.3.25",
     "semver": "^7.8.5",
     "typescript": "^7.0.2"
   },
