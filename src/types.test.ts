@@ -179,6 +179,9 @@ async function perCallOptions(stash: StashClient, signal: AbortSignal) {
   expectTypeOf(await stash.request("{ version { version } }", {}, { signal })).toEqualTypeOf<
     Record<string, unknown>
   >();
+  // A subscription takes a signal, but no deadline.
+  // @ts-expect-error subscriptions have no timeoutMs
+  stash.jobsSubscribe((status) => status.$pick("type"), { timeoutMs: 1_000 });
   for await (const update of stash.jobsSubscribe((status) => status.$pick("type"), { signal })) {
     expectTypeOf(update).toEqualTypeOf<{ type: JobStatusUpdateType }>();
   }

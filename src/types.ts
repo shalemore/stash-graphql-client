@@ -70,31 +70,33 @@ type Delivery<Kind, V> = Kind extends "subscription"
     ? Promise<V>
     : Field<V>;
 
-/** A trailing per-call options parameter, or none at all when `O` is `never`. */
-type OptionsParam<O> = [O] extends [never] ? [] : [options?: O];
+/** Per-call options; a subscription takes only a signal, since it has no deadline. */
+type OptionsParam<Kind> = Kind extends "field"
+  ? []
+  : [options?: Kind extends "subscription" ? Pick<RequestOptions, "signal"> : RequestOptions];
 
-type ObjectField<A, T, Name extends ObjectName, Kind = "field", O = never> =
+type ObjectField<A, T, Name extends ObjectName, Kind = "field"> =
   NoArgs<A> extends true
     ? <S extends Selection>(
         select: Select<Name, S>,
-        ...options: OptionsParam<O>
+        ...options: OptionsParam<Kind>
       ) => Delivery<Kind, Wrap<T, Output<Name, S>>>
     : {} extends A
       ? {
           <S extends Selection>(
             select: Select<Name, S>,
-            ...options: OptionsParam<O>
+            ...options: OptionsParam<Kind>
           ): Delivery<Kind, Wrap<T, Output<Name, S>>>;
           <S extends Selection>(
             args: A | undefined,
             select: Select<Name, S>,
-            ...options: OptionsParam<O>
+            ...options: OptionsParam<Kind>
           ): Delivery<Kind, Wrap<T, Output<Name, S>>>;
         }
       : <S extends Selection>(
           args: A,
           select: Select<Name, S>,
-          ...options: OptionsParam<O>
+          ...options: OptionsParam<Kind>
         ) => Delivery<Kind, Wrap<T, Output<Name, S>>>;
 
 /** Arguments of field `K` of object type `Name`; an empty object when it takes none. */
@@ -105,11 +107,11 @@ type ArgsOf<Name extends ObjectName, K> = Name extends keyof FieldArgs
   : {};
 
 /** A field of type `T` with arguments `A`: a selected value, or a method on a root field. */
-type FieldType<A, T, Kind = "field", O = never> = [RefName<T>] extends [never]
+type FieldType<A, T, Kind = "field"> = [RefName<T>] extends [never]
   ? Kind extends "field"
     ? ScalarField<A, Wrap<T, never>>
     : ScalarMethod<A, Wrap<T, never>, Kind>
-  : ObjectField<A, T, RefName<T>, Kind, O>;
+  : ObjectField<A, T, RefName<T>, Kind>;
 
 type FieldOf<Name extends ObjectName, K extends keyof Objects[Name]> = FieldType<
   ArgsOf<Name, K>,
@@ -153,7 +155,8 @@ export type Fields<Name extends ObjectName> = {
 /**
  * The result of a reusable selection callback:
  * `const card = (performer: Fields<"Performer">) => ({ id: performer.id })` gives
- * `Result<typeof card>`, which is `{ id: string }`.
+ * `Result<typeof card>`, which is `{ id: string }`. Extra parameters, such as a flag, are allowed
+ * and have no share in the result.
  */
 export type Result<Callback> = Callback extends (
   fields: infer Input,
@@ -177,12 +180,12 @@ export type Args<K extends RootField> = K extends keyof RootArgs ? RootArgs[K] :
 
 type ScalarMethod<A, V, Kind> =
   NoArgs<A> extends true
-    ? (options?: RequestOptions) => Delivery<Kind, V>
+    ? (...options: OptionsParam<Kind>) => Delivery<Kind, V>
     : {} extends A
-      ? (args?: A, options?: RequestOptions) => Delivery<Kind, V>
-      : (args: A, options?: RequestOptions) => Delivery<Kind, V>;
+      ? (args?: A, ...options: OptionsParam<Kind>) => Delivery<Kind, V>
+      : (args: A, ...options: OptionsParam<Kind>) => Delivery<Kind, V>;
 
-type Method<K extends RootField, Kind> = FieldType<Args<K>, Root[K], Kind, RequestOptions>;
+type Method<K extends RootField, Kind> = FieldType<Args<K>, Root[K], Kind>;
 
 /** One method per root field: arguments first (when it has any), then the selection. */
 export type RootMethods = {
