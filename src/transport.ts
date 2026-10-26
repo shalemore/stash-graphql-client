@@ -128,9 +128,15 @@ async function createSubscriptionClient(
 ): Promise<SubscriptionClient> {
   const { createClient } = await import("graphql-ws");
   const url = endpoint.replace(/^http/, "ws");
+  // Browsers, Bun and Node.js 22+ provide WebSocket; older Node.js needs a client of its own.
+  const NativeWebSocket: HeaderWebSocket | undefined = globalThis.WebSocket;
+  if (NativeWebSocket === undefined) {
+    throw new Error(
+      "Subscriptions need a global WebSocket (Node.js 22+, Bun or a browser); pass `subscriptions` to supply a graphql-ws client",
+    );
+  }
   // Browsers can't set headers on a WebSocket; they authenticate with the session cookie.
   if (Object.keys(headers).length === 0) return createClient({ url });
-  const NativeWebSocket: HeaderWebSocket = WebSocket;
   class AuthenticatedWebSocket extends NativeWebSocket {
     constructor(address: string | URL, protocols?: string | string[]) {
       super(address, {
