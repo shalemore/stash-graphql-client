@@ -122,8 +122,8 @@ function selectField(key: string, node: Node & { kind: "field" }, args: readonly
   return `${alias}${graphqlName(node.name)}${call}${selectionSet(node.select)}`;
 }
 
-/** Handed out to every field without arguments, so it must stay untouched. */
-const EMPTY_ARGS: readonly string[] = [];
+/** Shared by every field without arguments: frozen, since the type only calls it readonly. */
+const EMPTY_ARGS: readonly string[] = Object.freeze([]);
 
 /** Nested arguments are scalars (checked by the generator), so JSON is valid GraphQL syntax. */
 function literals(args: unknown) {
