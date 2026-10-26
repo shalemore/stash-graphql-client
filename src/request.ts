@@ -116,13 +116,14 @@ function selectionSet(select: unknown): string {
   return `{${parts.join(" ")}}`;
 }
 
-function selectField(key: string, node: Node & { kind: "field" }, args: string[]) {
+function selectField(key: string, node: Node & { kind: "field" }, args: readonly string[]) {
   const alias = key === node.name ? "" : `${graphqlName(key)}:`;
   const call = args.length > 0 ? `(${args.join(",")})` : "";
   return `${alias}${graphqlName(node.name)}${call}${selectionSet(node.select)}`;
 }
 
-const EMPTY_ARGS: string[] = [];
+/** Handed out to every field without arguments, so it must stay untouched. */
+const EMPTY_ARGS: readonly string[] = [];
 
 /** Nested arguments are scalars (checked by the generator), so JSON is valid GraphQL syntax. */
 function literals(args: unknown) {
