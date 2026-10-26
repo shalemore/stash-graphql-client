@@ -241,19 +241,21 @@ Every method takes an optional last argument with an `AbortSignal`, as `fetch` d
 ```ts
 const controller = new AbortController();
 const found = stash.findScenes((result) => result.$pick("count"), { signal: controller.signal });
-controller.abort(); // `found` rejects with the AbortError of fetch, and the request is dropped
+controller.abort(); // the request is dropped, and `found` rejects with the AbortError of fetch
+await found.catch(() => {}); // handle it where it is awaited, as with any other failed call
 
 // A deadline needs no controller
-const scene = await stash.findScene({ id: "42" }, (scene) => scene.$pick("title"), {
+const scene = await stash.findScene({ id: "42" }, (result) => result.$pick("title"), {
   signal: AbortSignal.timeout(5_000),
 });
 
 // A subscription ends instead of throwing, as if the loop was left
 const stopping = new AbortController();
-for await (const update of stash.jobsSubscribe((update) => update.$pick("type"), {
+for await (const update of stash.jobsSubscribe((result) => result.$pick("type"), {
   signal: stopping.signal,
 })) {
   console.log(update.type);
+  stopping.abort();
 }
 ```
 
