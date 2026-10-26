@@ -21,6 +21,8 @@ import {
   isUnionType,
 } from "graphql";
 
+import { parseSchemaHeader } from "./schema-header.ts";
+
 /** A root field with the same name as a client method would be shadowed. */
 const CLIENT_METHODS = new Set(["query", "mutation", "request"]);
 
@@ -42,7 +44,7 @@ const SCALARS: Record<string, string> = {
 };
 
 const source = await Bun.file("schema/stash.graphql").text();
-const version = /^# Stash (\S+)/.exec(source)?.[1] ?? "unknown";
+const { tag: version = "unknown" } = parseSchemaHeader(source);
 const schema = buildSchema(source);
 const ROOT_TYPES = [
   ["query", schema.getQueryType()],

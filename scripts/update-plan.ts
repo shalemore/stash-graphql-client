@@ -8,6 +8,7 @@
 import semver from "semver";
 import { z } from "zod";
 
+import { parseSchemaHeader } from "./schema-header.ts";
 import { latestStashRelease, schemaFingerprint } from "./stash-repo.ts";
 
 export interface UpdateState {
@@ -53,12 +54,12 @@ if (import.meta.main) {
     .object({ version: z.string() })
     .parse(await Bun.file("package.json").json());
   const latest = await latestStashRelease();
-  const header = (await Bun.file("schema/stash.graphql").text()).match(/^# Stash \S+ (\S+)/);
+  const { fingerprint } = parseSchemaHeader(await Bun.file("schema/stash.graphql").text());
 
   const plan = planUpdate({
     latest,
     latestSchema: await schemaFingerprint(latest),
-    trackedSchema: header?.[1] ?? "",
+    trackedSchema: fingerprint,
     current: version,
   });
   for (const [key, value] of Object.entries(plan)) console.log(`${key}=${value}`);

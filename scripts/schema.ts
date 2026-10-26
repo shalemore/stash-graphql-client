@@ -5,6 +5,7 @@
  */
 import { buildSchema, printSchema } from "graphql";
 
+import { schemaHeader } from "./schema-header.ts";
 import { latestStashRelease, schemaFingerprint, schemaSources } from "./stash-repo.ts";
 
 const tag = Bun.argv[2] ?? (await latestStashRelease());
@@ -12,5 +13,5 @@ const fingerprint = await schemaFingerprint(tag);
 // Building the schema validates it; printing normalizes the order and formatting.
 const schema = printSchema(buildSchema((await schemaSources(tag)).join("\n")));
 
-await Bun.write("schema/stash.graphql", `# Stash ${tag} ${fingerprint}\n\n${schema}\n`);
+await Bun.write("schema/stash.graphql", `${schemaHeader(tag, fingerprint)}\n\n${schema}\n`);
 console.log(`Downloaded the schema of Stash ${tag} (${fingerprint.slice(0, 10)})`);
