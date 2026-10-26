@@ -242,6 +242,32 @@ test("a per-call signal reaches fetch, and only for that call", async () => {
   expect(signals).toEqual([signal, undefined, signal, signal, signal]);
 });
 
+test("a root field with arguments reads arguments before options", async () => {
+  const bodies: unknown[] = [];
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    fetch: async (_url, init) => {
+      bodies.push(typeof init.body === "string" ? JSON.parse(init.body) : undefined);
+      signals.push(init.signal);
+      return Response.json({ data: { configureUI: {} } });
+    },
+  });
+  const { signal } = new AbortController();
+  await stash.configureUI({ input: { theme: "dark" } });
+  // @ts-expect-error the types ask for arguments first, but plain JavaScript callers pass options
+  await stash.configureUI({ signal });
+
+  expect(bodies).toEqual([
+    {
+      query: "mutation($input:Map){configureUI(input:$input)}",
+      variables: { input: { theme: "dark" } },
+    },
+    { query: "mutation{configureUI}", variables: {} },
+  ]);
+  expect(signals).toEqual([undefined, signal]);
+});
+
 test("aborting rejects the request with the AbortError of fetch", async () => {
   const stash = createStash({ endpoint: "http://stash.test/graphql", fetch: pendingFetch });
   const controller = new AbortController();

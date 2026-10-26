@@ -41,12 +41,12 @@ export function createStash(options: StashOptions): StashClient {
       send(kind, () => select(fields), call);
 
   const methods = Object.fromEntries(
-    Object.entries(ROOTS).map(([name, [kind, types]]) => {
+    Object.entries(ROOTS).map(([name, [kind]]) => {
       const root = (args: unknown, select: unknown) => ({ [name]: field(name)(args, select) });
       const method =
         kind === "subscription"
           ? (...rest: unknown[]) => {
-              const [args, select, call] = rootCall(types, rest);
+              const [args, select, call] = rootCall(rest);
               return transport.subscribe(
                 buildRequest(kind, root(args, select)).request,
                 name,
@@ -54,7 +54,7 @@ export function createStash(options: StashOptions): StashClient {
               );
             }
           : async (...rest: unknown[]) => {
-              const [args, select, call] = rootCall(types, rest);
+              const [args, select, call] = rootCall(rest);
               return (await send(kind, () => root(args, select), call))[name];
             };
       return [name, method];
@@ -73,16 +73,16 @@ export function createStash(options: StashOptions): StashClient {
 type RootCall = [args: unknown, select: unknown, options: RequestOptions | undefined];
 
 /**
- * Reads the arguments of a root method. The schema may make arguments optional, and the types
- * then also accept the selection, or only the options, as the first argument.
+ * Reads the arguments of a root method, which the schema and the types can make optional. The
+ * selection is always a function, and an object carrying a `signal` is the options, so anything
+ * else is the arguments.
  */
-function rootCall(types: Record<string, string>, rest: unknown[]): RootCall {
+function rootCall(rest: unknown[]): RootCall {
   const [first, second, third] = rest;
   if (rest.length === 1) {
     if (typeof first === "function") return [undefined, first, undefined];
-    return Object.keys(types).length === 0
-      ? [undefined, undefined, callOptions(first)]
-      : [first, undefined, undefined];
+    const options = callOptions(first);
+    return options === undefined ? [first, undefined, undefined] : [undefined, undefined, options];
   }
   if (rest.length === 2) {
     if (typeof first === "function") return [undefined, first, callOptions(second)];
