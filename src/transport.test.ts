@@ -141,6 +141,29 @@ test("subscription errors are thrown", async () => {
   expect(read()).rejects.toThrow(StashError);
 });
 
+test("an error from the stream wins over a failing close", async () => {
+  const source: AsyncIterableIterator<unknown> = {
+    async next() {
+      return { value: { errors: [{ message: "denied" }] }, done: false };
+    },
+    async return() {
+      throw new Error("close failed");
+    },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+  };
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    subscriptions: { iterate: () => source },
+  });
+  const error = await stash
+    .scanCompleteSubscribe()
+    .next()
+    .catch((caught: unknown) => caught);
+  expect(error instanceof StashError && error.message).toBe("denied");
+});
+
 test("sends files as a GraphQL multipart request", async () => {
   let body: unknown;
   const stash = createStash({

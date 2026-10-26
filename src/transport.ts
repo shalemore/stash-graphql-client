@@ -123,7 +123,8 @@ export function createTransport(options: StashOptions) {
           try {
             return { value: readData(result.value, 200, true)[field], done: false };
           } catch (error) {
-            await iterator.return?.();
+            // A failing close must not replace the error the caller has to see.
+            await iterator.return?.().catch(() => {});
             throw error;
           }
         },
