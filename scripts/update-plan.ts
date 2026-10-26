@@ -6,7 +6,6 @@
  * Usage: `bun scripts/update-plan.ts` prints `key=value` lines for $GITHUB_OUTPUT.
  */
 import semver from "semver";
-import { z } from "zod";
 
 import { parseSchemaHeader } from "./schema-header.ts";
 import { latestStashRelease, schemaFingerprint } from "./stash-repo.ts";
@@ -50,9 +49,14 @@ function never(message: string): never {
 }
 
 if (import.meta.main) {
-  const { version } = z
-    .object({ version: z.string() })
-    .parse(await Bun.file("package.json").json());
+  const manifest: unknown = await Bun.file("package.json").json();
+  const version =
+    typeof manifest === "object" &&
+    manifest !== null &&
+    "version" in manifest &&
+    typeof manifest.version === "string"
+      ? manifest.version
+      : never("package.json has no version");
   const latest = await latestStashRelease();
   const { fingerprint } = parseSchemaHeader(await Bun.file("schema/stash.graphql").text());
 
