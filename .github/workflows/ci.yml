@@ -23,11 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # The oldest supported runtime and one that also has WebSocket.
-        node: [20, 22]
+        # The oldest supported runtime, which is where AbortSignal.any has to exist, and the LTS.
+        node: ["20.3.0", 24]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
