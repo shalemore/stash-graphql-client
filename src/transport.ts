@@ -216,21 +216,23 @@ async function createSubscriptionClient(
 }
 
 function readData(payload: unknown, status: number, ok: boolean) {
-  const errors =
-    isObject(payload) && Array.isArray(payload["errors"])
-      ? payload["errors"].map((error: unknown) => ({
-          message:
-            isObject(error) && typeof error["message"] === "string"
-              ? error["message"]
-              : String(error),
-        }))
-      : [];
+  if (!isObject(payload)) {
+    throw new StashError(ok ? "The response is not a GraphQL result" : `HTTP ${status}`, status);
+  }
+  const errors = Array.isArray(payload["errors"])
+    ? payload["errors"].map((error: unknown) => ({
+        message:
+          isObject(error) && typeof error["message"] === "string"
+            ? error["message"]
+            : String(error),
+      }))
+    : [];
   if (!ok || errors.length > 0) {
     const message = errors.map((error) => error.message).join("\n");
-    const data = isObject(payload) && isObject(payload["data"]) ? payload["data"] : undefined;
+    const data = isObject(payload["data"]) ? payload["data"] : undefined;
     throw new StashError(message || `HTTP ${status}`, status, errors, data);
   }
-  return isObject(payload) && isObject(payload["data"]) ? payload["data"] : {};
+  return isObject(payload["data"]) ? payload["data"] : {};
 }
 
 /** GraphQL multipart request, https://github.com/jaydenseric/graphql-multipart-request-spec */

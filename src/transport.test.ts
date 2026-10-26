@@ -425,6 +425,20 @@ function idleSubscription() {
   return { source, stopped: () => stopped };
 }
 
+test("rejects an answer that is not a GraphQL result", async () => {
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    // A proxy or a wrong endpoint can answer with a page instead.
+    fetch: async () => new Response("<html>login</html>", { status: 200 }),
+  });
+  const error = await stash
+    .findScenes((found) => ({ count: found.count }))
+    .catch((caught: unknown) => caught);
+
+  expect(error).toBeInstanceOf(StashError);
+  expect(error instanceof StashError && error.message).toBe("The response is not a GraphQL result");
+});
+
 test("keeps the partial data of a response that also has errors", async () => {
   const stash = createStash({
     endpoint: "http://stash.test/graphql",
