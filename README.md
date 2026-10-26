@@ -8,7 +8,7 @@ A fully typed client for the [Stash](https://github.com/stashapp/stash) GraphQL 
 
 - **Typed field selection.** Fields are selected with callbacks, and the result type contains exactly the selected fields.
 - **Generated from Stash's own schema** (the latest release, see [Stash versions](#stash-versions)), so the names match.
-- **Lightweight.** Built on `fetch`. Subscriptions need the optional `graphql-ws` package, which is loaded on first use.
+- **Lightweight.** Built on `fetch`. Subscriptions need the optional `graphql-ws` peer dependency, installed separately.
 
 ```sh
 npm install stash-graphql-client
@@ -193,13 +193,13 @@ for await (const update of jobs) {
 }
 ```
 
-Subscriptions go over a WebSocket through [`graphql-ws`](https://github.com/enisdenjo/graphql-ws), an optional peer dependency that is loaded on first use:
+Subscriptions go over a WebSocket through [`graphql-ws`](https://github.com/enisdenjo/graphql-ws). It is an optional peer dependency and is not installed with this package, so add it before using subscriptions:
 
 ```sh
 npm install graphql-ws
 ```
 
-The client is created on the first subscription, at the same address as `endpoint` (`http` becomes `ws`, `https` becomes `wss`).
+It is loaded on the first subscription, which is created at the same address as `endpoint` (`http` becomes `ws`, `https` becomes `wss`).
 
 - **Authentication.** On Node.js and Bun, `apiKey` and `headers` are sent with the WebSocket handshake too. Browsers can't set headers on a WebSocket, so there Stash has to recognize the session cookie.
 - **Needs a `WebSocket`.** That is global in browsers, on Node.js 22+ and on Bun. On older versions, or to configure reconnecting, pass your own `graphql-ws` client. A custom client must also handle authentication.
