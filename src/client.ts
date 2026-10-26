@@ -93,12 +93,18 @@ function rootCall(rest: unknown[]): RootCall {
   return [first, second, callOptions(third)];
 }
 
-/** The per-call options of a call, which the types allow to be left out. */
+/**
+ * The per-call options of a call, read from an untyped argument. Every field of `RequestOptions` has
+ * to be recognised here, since a call cannot tell its arguments from its options otherwise.
+ */
 function callOptions(value: unknown): RequestOptions | undefined {
-  if (typeof value !== "object" || value === null || !("signal" in value)) return undefined;
-  const { signal } = value;
-  // Passed on as given, so an option added later reaches the transport without being listed here.
-  return isAbortSignal(signal) ? { ...value, signal } : undefined;
+  if (typeof value !== "object" || value === null) return undefined;
+  const signal = "signal" in value ? value.signal : undefined;
+  const timeoutMs = "timeoutMs" in value ? value.timeoutMs : undefined;
+  if (signal === undefined && timeoutMs === undefined) return undefined;
+  if (signal !== undefined && !isAbortSignal(signal)) return undefined;
+  if (timeoutMs !== undefined && typeof timeoutMs !== "number") return undefined;
+  return { ...value, signal, timeoutMs };
 }
 
 /**

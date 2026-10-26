@@ -19,7 +19,10 @@ export interface StashOptions {
   headers?: Record<string, string> | undefined;
   /** Cancels every request and subscription this client makes, as an `AbortSignal` does. */
   signal?: AbortSignal | undefined;
-  /** Deadline for every HTTP request, e.g. `30_000` for 30 seconds. Subscriptions have none. */
+  /**
+   * Deadline for every HTTP request, e.g. `30_000` for 30 seconds. A call can override it, and
+   * subscriptions have none.
+   */
   timeoutMs?: number | undefined;
   /** Custom fetch, e.g. to route through a proxy or for tests. */
   fetch?: ((input: string, init: RequestInit) => Promise<Response>) | undefined;
@@ -34,6 +37,8 @@ export interface RequestOptions {
    * deadline; combine signals with `AbortSignal.any([...])`.
    */
   signal?: AbortSignal | undefined;
+  /** Deadline for this request, replacing `timeoutMs` of the client. Subscriptions have none. */
+  timeoutMs?: number | undefined;
 }
 
 /** Thrown for non-2xx responses and GraphQL errors. */
@@ -72,10 +77,11 @@ export function createTransport(options: StashOptions) {
         : Promise.resolve(options.subscriptions));
 
   const send = async (request: GraphQLRequest, upload = false, call?: RequestOptions) => {
+    const timeout = call?.timeoutMs ?? options.timeoutMs;
     const signal = combineSignals([
       options.signal,
       call?.signal,
-      options.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs),
+      timeout === undefined ? undefined : AbortSignal.timeout(timeout),
     ]);
     const files: [path: string, file: Blob][] = [];
     // The copy is only used by the multipart branch, so skip it when there is nothing to upload.

@@ -236,7 +236,8 @@ try {
 
 ## Cancellation and timeouts
 
-Every method takes an optional last argument with an `AbortSignal`, as `fetch` does:
+Every method takes an optional last argument with a `signal`, as `fetch` does, or a `timeoutMs` for a
+deadline:
 
 ```ts
 const controller = new AbortController();
@@ -246,7 +247,7 @@ await found.catch(() => {}); // handle it where it is awaited, as with any other
 
 // A deadline needs no controller
 const scene = await stash.findScene({ id: "42" }, (result) => result.$pick("title"), {
-  signal: AbortSignal.timeout(5_000),
+  timeoutMs: 5_000,
 });
 
 // A subscription ends instead of throwing, as if the loop was left
@@ -259,7 +260,7 @@ for await (const update of stash.jobsSubscribe((result) => result.$pick("type"),
 }
 ```
 
-An aborted request rejects with the same `AbortError` that `fetch` throws, so `error.name === "AbortError"` tells it apart from a `StashError`. A deadline rejects with a `TimeoutError`. Combine signals with `AbortSignal.any([...])`.
+An aborted request rejects with the same `AbortError` that `fetch` throws, so `error.name === "AbortError"` tells it apart from a `StashError`. A deadline (`timeoutMs`, or `AbortSignal.timeout(ms)` as the signal) rejects with a `TimeoutError`. Combine signals with `AbortSignal.any([...])`.
 
 To apply a deadline or a signal to every call instead, pass `timeoutMs` or `signal` to `createStash`, see [Options](#options). A signal of the client cancels the requests in flight on top of their own signals.
 
@@ -272,7 +273,7 @@ createStash({
   endpoint: "https://stash.example.com/graphql",
   apiKey: "...",
   headers: { "X-Proxy-Token": "..." }, // e.g. for a reverse proxy
-  timeoutMs: 30_000, // deadline for every request
+  timeoutMs: 30_000, // deadline for every request, overridden by a call's own
   signal: closing.signal, // cancels every request and subscription
   fetch: (url, init) => fetch(url, init), // or any fetch-like function
   // subscriptions: your own graphql-ws client, see Subscriptions

@@ -312,6 +312,26 @@ test("timeoutMs gives every request a deadline", async () => {
   expect(error).toMatchObject({ name: "TimeoutError" });
 });
 
+test("a call can set its own deadline", async () => {
+  const stash = createStash({ endpoint: "http://stash.test/graphql", fetch: pendingFetch });
+  const error = await stash
+    .findScenes((found) => ({ count: found.count }), { timeoutMs: 5 })
+    .catch((caught: unknown) => caught);
+  expect(error).toMatchObject({ name: "TimeoutError" });
+}, 2_000);
+
+test("a call overrides the deadline of the client", async () => {
+  const stash = createStash({
+    endpoint: "http://stash.test/graphql",
+    timeoutMs: 60_000,
+    fetch: pendingFetch,
+  });
+  const error = await stash
+    .findScenes((found) => ({ count: found.count }), { timeoutMs: 5 })
+    .catch((caught: unknown) => caught);
+  expect(error).toMatchObject({ name: "TimeoutError" });
+}, 2_000);
+
 test("the signal of the client cancels a request that has a signal of its own", async () => {
   const controller = new AbortController();
   const stash = createStash({

@@ -166,6 +166,9 @@ async function perCallOptions(stash: StashClient, signal: AbortSignal) {
     await stash.findScene({ id: "1" }, (scene) => ({ id: scene.id }), { signal }),
   ).toEqualTypeOf<{ id: string } | null>();
   expectTypeOf(
+    await stash.findScenes((found) => ({ count: found.count }), { timeoutMs: 1_000 }),
+  ).toEqualTypeOf<{ count: number }>();
+  expectTypeOf(
     await stash.performerDestroy({ input: { id: "1" } }, { signal }),
   ).toEqualTypeOf<boolean>();
   expectTypeOf(
