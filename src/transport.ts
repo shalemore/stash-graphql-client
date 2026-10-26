@@ -21,7 +21,7 @@ export interface StashOptions {
   signal?: AbortSignal | undefined;
   /**
    * Deadline for every HTTP request, e.g. `30_000` for 30 seconds. A call can override it, and
-   * subscriptions have none.
+   * subscriptions have none of their own.
    */
   timeoutMs?: number | undefined;
   /** Custom fetch, e.g. to route through a proxy or for tests. */
@@ -37,7 +37,7 @@ export interface RequestOptions {
    * deadline; combine signals with `AbortSignal.any([...])`.
    */
   signal?: AbortSignal | undefined;
-  /** Deadline for this request, replacing `timeoutMs` of the client. Subscriptions have none. */
+  /** Deadline for this request, replacing `timeoutMs` of the client. */
   timeoutMs?: number | undefined;
 }
 

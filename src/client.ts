@@ -3,10 +3,7 @@ import { buildRequest, field, fields, type OperationKind } from "./request.ts";
 import { createTransport, type RequestOptions, type StashOptions } from "./transport.ts";
 import type { Fields, Output, RootMethods, Selection } from "./types.ts";
 
-/**
- * A client with one method per root field, plus `query`, `mutation` and `request`.
- * Every method takes an optional trailing `options` argument, e.g. to pass an `AbortSignal`.
- */
+/** A client with one method per root field, plus `query`, `mutation` and `request`. */
 export interface StashClient extends RootMethods {
   /**
    * Sends several queries in one request. The keys become the result keys, so the same root
