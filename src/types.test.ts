@@ -4,8 +4,8 @@
 import { expect, expectTypeOf, test } from "bun:test";
 
 import type { StashClient } from "./client.ts";
-import type { JobStatusUpdateType } from "./generated/schema.ts";
-import type { Fields, Result } from "./types.ts";
+import type { JobStatusUpdateType, Objects } from "./generated/schema.ts";
+import type { Fields, R, Result } from "./types.ts";
 
 async function resultTypes(stash: StashClient) {
   const found = await stash.findPerformers({ filter: { per_page: 1 } }, (result) => ({
@@ -150,6 +150,12 @@ function reusableSelections() {
   >();
 }
 
+function generatedShapes() {
+  // Generated field types are plain shapes: one wrapper per object reference, native lists and null.
+  expectTypeOf<Objects["Tag"]["parents"]>().toEqualTypeOf<R<"Tag">[]>();
+  expectTypeOf<Objects["Tag"]["sort_name"]>().toEqualTypeOf<string | null>();
+}
+
 async function perCallOptions(stash: StashClient, signal: AbortSignal) {
   // Every method takes a trailing options argument, for cancellation; results are unchanged.
   expectTypeOf(
@@ -208,7 +214,8 @@ test("compile-time checks are part of `bun check`", () => {
     pickTypes,
     unionTypes,
     reusableSelections,
+    generatedShapes,
     perCallOptions,
     invalidCalls,
-  ]).toHaveLength(7);
+  ]).toHaveLength(8);
 });

@@ -1,19 +1,6 @@
-import type { Abstract, Objects } from "./generated/schema.ts";
+import type { Abstract, FieldArgs, Objects } from "./generated/schema.ts";
 import type { RequestOptions, Subscription } from "./transport.ts";
 
-/** A field with arguments `A` and return type expression `T`. */
-export interface F<A, T> {
-  args: A;
-  type: T;
-}
-/** A list of `T`. */
-export interface L<T> {
-  list: T;
-}
-/** A nullable `T`; anything not wrapped in `N` is non-null. */
-export interface N<T> {
-  nullable: T;
-}
 /** A reference to an object, interface or union type. */
 export interface R<Name extends keyof Objects> {
   ref: Name;
@@ -36,16 +23,14 @@ export interface Fragment<T> {
 /** What a selection callback returns: result keys mapped to selected fields. */
 export type Selection = Record<string, Field<unknown> | Fragment<unknown>>;
 
-type Unwrap<T> = T extends N<infer I> ? Unwrap<I> : T extends L<infer I> ? Unwrap<I> : T;
+/**
+ * The object type a field resolves to, looking through lists and nullability; `never` for a scalar.
+ */
+type RefName<T> =
+  T extends R<infer Name> ? Name : T extends readonly (infer I)[] ? RefName<I> : never;
 /** The value of a field of type `T`; `Inner` is the value of the object it refers to. */
 type Wrap<T, Inner> =
-  T extends N<infer I>
-    ? Wrap<I, Inner> | null
-    : T extends L<infer I>
-      ? Wrap<I, Inner>[]
-      : T extends R<ObjectName>
-        ? Inner
-        : T;
+  T extends R<ObjectName> ? Inner : T extends readonly (infer I)[] ? Wrap<I, Inner>[] : T;
 type Value<S> = S extends Field<infer T> ? T : never;
 
 type FragmentKey = `... on ${string}`;
@@ -112,12 +97,18 @@ type ObjectField<A, T, Name extends ObjectName, Kind = "field", O = never> =
           ...options: OptionsParam<O>
         ) => Delivery<Kind, Wrap<T, Output<Name, S>>>;
 
-type FieldOf<Definition> =
-  Definition extends F<infer A, infer T>
-    ? Unwrap<T> extends R<infer Name>
-      ? ObjectField<A, T, Name>
-      : ScalarField<A, Wrap<T, never>>
-    : never;
+/** Arguments of field `K` of object type `Name`; an empty object when it takes none. */
+type ArgsOf<Name extends ObjectName, K> = Name extends keyof FieldArgs
+  ? K extends keyof FieldArgs[Name]
+    ? FieldArgs[Name][K]
+    : {}
+  : {};
+
+type FieldOf<Name extends ObjectName, K extends keyof Objects[Name]> = [
+  RefName<Objects[Name][K]>,
+] extends [never]
+  ? ScalarField<ArgsOf<Name, K>, Wrap<Objects[Name][K], never>>
+  : ObjectField<ArgsOf<Name, K>, Objects[Name][K], RefName<Objects[Name][K]>>;
 
 /**
  * Selects fields on member `M` of a union or interface. Spread the result into the selection;
@@ -130,13 +121,13 @@ type On<Name extends keyof Abstract> = <M extends Abstract[Name] & ObjectName, S
 
 /** Fields that can be selected by name alone: scalars without required arguments. */
 type Pickable<Name extends ObjectName> = {
-  [K in keyof Objects[Name]]: FieldOf<Objects[Name][K]> extends Field<unknown> ? K : never;
+  [K in keyof Objects[Name]]: FieldOf<Name, K> extends Field<unknown> ? K : never;
 }[keyof Objects[Name]];
 
 /** Selects scalar fields by name. Spread the result into a selection, or return it as is. */
 type PickFields<Name extends ObjectName> = <K extends Pickable<Name>>(
   ...names: K[]
-) => { [P in K]: FieldOf<Objects[Name][P]> };
+) => { [P in K]: FieldOf<Name, P> };
 
 /**
  * The fields of object type `Name`, passed to selection callbacks. Reading a field selects it;
@@ -144,7 +135,7 @@ type PickFields<Name extends ObjectName> = <K extends Pickable<Name>>(
  * Don't use `...rest` on it: the object is empty at runtime, so a rest element selects nothing.
  */
 export type Fields<Name extends ObjectName> = {
-  readonly [K in keyof Objects[Name]]: FieldOf<Objects[Name][K]>;
+  readonly [K in keyof Objects[Name]]: FieldOf<Name, K>;
 } & {
   /** The name of the object type. */
   readonly __typename: Field<Name extends keyof Abstract ? Abstract[Name] : Name>;
@@ -174,9 +165,9 @@ export type RootField = keyof Root;
 /** Root fields delivered over WebSocket. */
 export type SubscriptionField = keyof Objects["Subscription"];
 
-/** Arguments of a root field. */
-export type Args<K extends RootField> =
-  Root[K] extends F<infer A extends object, unknown> ? A : never;
+type RootArgs = FieldArgs["Query"] & FieldArgs["Mutation"] & FieldArgs["Subscription"];
+/** Arguments of a root field; an empty object when it takes none. */
+export type Args<K extends RootField> = K extends keyof RootArgs ? RootArgs[K] : {};
 
 type ScalarMethod<A, V, Kind> =
   NoArgs<A> extends true
@@ -185,14 +176,11 @@ type ScalarMethod<A, V, Kind> =
       ? (args?: A, options?: RequestOptions) => Delivery<Kind, V>
       : (args: A, options?: RequestOptions) => Delivery<Kind, V>;
 
-type Method<Definition, Kind> =
-  Definition extends F<infer A, infer T>
-    ? Unwrap<T> extends R<infer Name>
-      ? ObjectField<A, T, Name, Kind, RequestOptions>
-      : ScalarMethod<A, Wrap<T, never>, Kind>
-    : never;
+type Method<K extends RootField, Kind> = [RefName<Root[K]>] extends [never]
+  ? ScalarMethod<Args<K>, Wrap<Root[K], never>, Kind>
+  : ObjectField<Args<K>, Root[K], RefName<Root[K]>, Kind, RequestOptions>;
 
 /** One method per root field: arguments first (when it has any), then the selection. */
 export type RootMethods = {
-  [K in keyof Root]: Method<Root[K], K extends SubscriptionField ? "subscription" : "query">;
+  [K in keyof Root]: Method<K, K extends SubscriptionField ? "subscription" : "query">;
 };
