@@ -41,9 +41,6 @@
     "prepublishOnly": "bun run build",
     "verify": "bun check && bun run lint && bun test && bun run build && bun run check:package"
   },
-  "dependencies": {
-    "graphql-ws": "^6.3.0"
-  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@octokit/rest": "^22.0.1",
@@ -52,12 +49,21 @@
     "@types/bun": "^1.4.3",
     "@types/semver": "^7.8.0",
     "graphql": "^17.0.2",
+    "graphql-ws": "^6.3.0",
     "oxfmt": "^0.72.0",
     "oxlint": "^1.87.0",
     "oxlint-tsgolint": "^7.0.2004",
     "publint": "^0.3.25",
     "semver": "^7.8.5",
     "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "graphql-ws": "^6.3.0"
+  },
+  "peerDependenciesMeta": {
+    "graphql-ws": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=20.3"

@@ -165,11 +165,20 @@ type HeaderWebSocket = new (
 ) => WebSocket;
 
 /** Loaded on first use, so code without subscriptions never bundles graphql-ws. */
+/** Loaded on first use, so HTTP-only users don't need the optional graphql-ws package. */
+async function loadSubscriptions() {
+  try {
+    return await import("graphql-ws");
+  } catch (error) {
+    throw new Error("Subscriptions need the optional `graphql-ws` package", { cause: error });
+  }
+}
+
 async function createSubscriptionClient(
   endpoint: string,
   headers: Record<string, string>,
 ): Promise<SubscriptionClient> {
-  const { createClient } = await import("graphql-ws");
+  const { createClient } = await loadSubscriptions();
   const url = endpoint.replace(/^http/, "ws");
   // Browsers, Bun and Node.js 22+ provide WebSocket; older Node.js needs a client of its own.
   const NativeWebSocket: HeaderWebSocket | undefined = globalThis.WebSocket;
