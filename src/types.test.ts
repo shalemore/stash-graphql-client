@@ -187,7 +187,7 @@ async function perCallOptions(stash: StashClient, signal: AbortSignal) {
   }
 }
 
-async function invalidCalls(stash: StashClient) {
+async function invalidCalls(stash: StashClient, baseFile: Fields<"BaseFile">) {
   // @ts-expect-error object fields can't be picked, they need a selection
   await stash.findScene({ id: "1" }, (scene) => scene.$pick("studio"));
   // @ts-expect-error unknown field
@@ -212,6 +212,37 @@ async function invalidCalls(stash: StashClient) {
   await stash.findFiles((result) => ({ files: result.files((f) => f.$on("Scene", (s) => s)) }));
   // @ts-expect-error mutations can't be selected in a query
   await stash.query((query) => ({ x: query.performerDestroy({ input: { id: "1" } }) }));
+  // @ts-expect-error duplicate fields in $pick are rejected
+  await stash.findScene({ id: "1" }, (scene) => scene.$pick("id", "id"));
+  // @ts-expect-error $pick requires at least one field name
+  await stash.findScene({ id: "1" }, (scene) => scene.$pick());
+  // @ts-expect-error empty selections are rejected
+  await stash.findScenes(() => ({}));
+  // @ts-expect-error empty root selections are rejected
+  await stash.query(() => ({}));
+  // @ts-expect-error spreading an uncalled object field selects nothing
+  // oxlint-disable-next-line typescript/no-misused-spread -- testing compile-time rejection of spread
+  await stash.findPerformers((found) => ({ ...found.$pick("count"), ...found.performers }));
+  // @ts-expect-error spreading a scalar field directly instead of assigning it to a key
+  await stash.findPerformers((found) => ({ ...found.count }));
+  // @ts-expect-error spreading a called object field instead of assigning it to a key
+  await stash.findPerformers((found) => ({
+    ...found.$pick("count"),
+    ...found.performers((p) => p.$pick("id")),
+  }));
+  // @ts-expect-error spreading the callback parameter selects nothing at runtime
+  await stash.version((version) => ({ ...version }));
+  // @ts-expect-error aliases must be valid GraphQL identifiers
+  await stash.findScenes((result) => ({ "a-b": result.count }));
+  // @ts-expect-error fragments from another type cannot be spread into an unrelated selection
+  await stash.findPerformers((found) => ({
+    count: found.count,
+    ...fileFields(baseFile),
+  }));
+  // @ts-expect-error Result rejects reusable callbacks whose selection is invalid
+  expectTypeOf<Result<(performer: Fields<"Performer">) => { bad: typeof performer.tags }>>();
+  // @ts-expect-error Result rejects callbacks without a Fields<Name> parameter
+  expectTypeOf<Result<() => { id: string }>>();
 }
 
 test("compile-time checks are part of `bun check`", () => {

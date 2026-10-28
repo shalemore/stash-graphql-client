@@ -29,6 +29,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "test": "bun test",
     "lint": "oxfmt --check && oxlint",
     "fix": "oxfmt && oxlint --fix",
     "schema": "bun scripts/schema.ts && bun run generate",

@@ -139,8 +139,38 @@ const listScenes = (args: Args<"findScenes">) =>
 
 Callbacks run once, only to build the request. They must return only fields, nested selections and `$on` spreads. Don't `await` or compute anything inside them; do that with the result instead.
 
-> [!WARNING]
-> Don't use `...rest` on the callback parameter. It is always empty, so nothing is selected.
+Only `$pick(...)` and `$on(...)` return objects that can be spread with `...`. Object fields require a nested selection callback (GraphQL has no `SELECT *`), and individual fields must be assigned to a result key:
+
+```ts
+// ❌ Wrong: object fields can't be selected without a callback or via $pick
+await stash.findPerformers((found) => ({ performers: found.performers }));
+//                                       ~~~~~~~~~~ needs a selection callback
+await stash.findPerformers((found) => found.$pick("performers"));
+//                                                ~~~~~~~~~~~~ object field, not a scalar
+
+// ❌ Wrong: spreading a field or the callback parameter with `...`
+await stash.findPerformers((found) => ({ ...found.$pick("count"), ...found.performers }));
+//                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+await stash.findPerformers((found) => ({ ...found.count }));
+//                                    ~~~~~~~~~~~~~~~~~~~~
+await stash.version(({ $pick, ...rest }) => rest);
+//                                          ~~~~
+
+// ❌ Wrong: empty selections, duplicate $pick fields, or non-GraphQL characters in aliases
+await stash.findPerformers(() => ({}));
+//                               ~~~~
+await stash.findPerformers((found) => found.$pick("count", "count"));
+//                                                ~~~~~~~~~~~~~~~~ duplicate field
+await stash.findPerformers((found) => ({ "total-count": found.count }));
+//                                       ~~~~~~~~~~~~~ `-` is not allowed in a GraphQL alias
+
+// ✅ Right: spread $pick for scalars, use valid identifier keys for aliases, and pass a callback to object fields
+await stash.findPerformers((found) => ({
+  ...found.$pick("count"),
+  totalCount: found.count,
+  performers: found.performers((performer) => performer.$pick("id", "name", "alias_list")),
+}));
+```
 
 ## Several root fields in one request
 
@@ -275,10 +305,17 @@ createStash({
   headers: { "X-Proxy-Token": "..." }, // e.g. for a reverse proxy
   timeoutMs: 30_000, // deadline for every request, overridden by a call's own
   signal: closing.signal, // cancels every request and subscription
-  fetch: (url, init) => fetch(url, init), // or any fetch-like function
+  fetch: (url, init) => fetch(url, init), // or wrap another HTTP client and return Response.json(data, { status })
   // subscriptions: your own graphql-ws client, see Subscriptions
 });
 ```
+
+## Runtime and TypeScript support
+
+- **Server (Node.js and Bun).** Works on **Node.js 20.3+** and **Bun 1.0+** with no required dependencies (`fetch`, `Blob`, `FormData` and `AbortSignal.any` are built in). Subscriptions need the optional `graphql-ws` package; Node.js 22+ and Bun include a global `WebSocket`, while Node.js 20 needs the `ws` package passed to `graphql-ws` (see [Subscriptions](#subscriptions)).
+- **Browser.** Works in any modern browser (Chrome/Edge 116+, Firefox 124+, Safari 17.4+). Queries, mutations and file uploads (`File` / `Blob`) work out of the box. Browsers cannot set `ApiKey` headers on a WebSocket, so browser subscriptions rely on Stash's session cookie.
+- **Custom HTTP client.** Pass a custom `fetch: async (url, init) => Response.json(data, { status })` to `createStash` to route requests through another client (such as `axios` or `undici`) or a custom proxy.
+- **TypeScript.** Works with **TypeScript 5.0+** (5.x, 6.x and 7.x / `tsgo`) on both frontend and backend, with `"moduleResolution": "bundler"` (Vite, Next.js, Bun) or `"node16"` / `"nodenext"` (Node.js ESM).
 
 ## Stash versions
 

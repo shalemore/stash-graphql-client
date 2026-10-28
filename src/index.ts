@@ -17,6 +17,7 @@ export type {
   R,
   Result,
   RootField,
+  Select,
   Selection,
   SubscriptionField,
 } from "./types.ts";

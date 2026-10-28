@@ -1,7 +1,7 @@
 import { ROOTS } from "./generated/roots.ts";
 import { buildRequest, field, fields, type OperationKind } from "./request.ts";
 import { createTransport, type RequestOptions, type StashOptions } from "./transport.ts";
-import type { Fields, Output, RootMethods, Selection } from "./types.ts";
+import type { Output, RootMethods, Select } from "./types.ts";
 
 /** A client with one method per root field, plus `query`, `mutation` and `request`. */
 export interface StashClient extends RootMethods {
@@ -9,13 +9,13 @@ export interface StashClient extends RootMethods {
    * Sends several queries in one request. The keys become the result keys, so the same root
    * field can be selected twice with different arguments.
    */
-  query<S extends Selection>(
-    select: (query: Fields<"Query">) => S,
+  query<S extends Record<string, unknown>>(
+    select: Select<"Query", S>,
     options?: RequestOptions,
   ): Promise<Output<"Query", S>>;
   /** Sends several mutations in one request; Stash runs them in order. */
-  mutation<S extends Selection>(
-    select: (mutation: Fields<"Mutation">) => S,
+  mutation<S extends Record<string, unknown>>(
+    select: Select<"Mutation", S>,
     options?: RequestOptions,
   ): Promise<Output<"Mutation", S>>;
   /** Sends any GraphQL document as is and returns the untyped `data`. */

@@ -192,6 +192,7 @@ test("rejects invalid selections before sending", async () => {
   expect(await rejection(stash.findScenes(() => ({ count: true })))).toBe(
     "count is not a selected field",
   );
+  // @ts-expect-error alias names must be valid GraphQL identifiers
   expect(await rejection(stash.findScenes((r) => ({ "a b": r.count })))).toBe(
     "Invalid GraphQL name: a b",
   );
@@ -199,6 +200,7 @@ test("rejects invalid selections before sending", async () => {
     // @ts-expect-error mutations can't be sent as queries
     await rejection(stash.query((q) => ({ x: q.performerDestroy({ input: { id: "1" } }) }))),
   ).toBe("performerDestroy is not a query field");
+  // @ts-expect-error a selection cannot be empty
   expect(await rejection(stash.findScenes(() => ({})))).toBe(
     "A selection must select at least one field",
   );
@@ -221,6 +223,7 @@ test("rejects aliases that cannot name a variable", async () => {
   expect(
     await rejection(
       stash.query((query) => ({
+        // @ts-expect-error alias names must be valid GraphQL identifiers
         "a-b": query.findScenes({ scene_ids: [1] }, (result) => ({ count: result.count })),
         version: query.version((result) => ({ version: result.version })),
       })),
